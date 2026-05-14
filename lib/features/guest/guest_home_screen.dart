@@ -6,8 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
+import '../events/create_event_placeholder_screen.dart';
 import '../materials/articles_list_screen.dart';
+import '../profile/profile_screen.dart';
 import '../tests/tests_list_screen.dart';
 
 class GuestHomeScreen extends StatefulWidget {
@@ -24,13 +27,27 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
   bool _isTestsLoading = true;
   String? _materialsError;
   String? _testsError;
+  bool _hasExtendedAccess = false;
   List<GuestMaterial> _materials = const [];
   List<GuestTest> _tests = const [];
 
   @override
   void initState() {
     super.initState();
+    _loadAccessState();
     _loadGuestContent();
+  }
+
+  Future<void> _loadAccessState() async {
+    final hasExtendedAccess = await SessionService().hasExtendedAccess();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _hasExtendedAccess = hasExtendedAccess;
+    });
   }
 
   Future<void> _loadGuestContent() async {
@@ -165,7 +182,8 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
       extendBody: true,
       backgroundColor: AppColors.background,
       bottomNavigationBar: GuestBottomNavigation(
-        onItemTap: (index) => _handleBottomNavigationTap(context, index),
+        onItemTap: (index) =>
+            _handleBottomNavigationTap(context, index, _hasExtendedAccess),
       ),
       body: _buildBody(context),
     );
@@ -183,12 +201,14 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
             materials: _materials,
             isLoading: _isMaterialsLoading,
             errorText: _materialsError,
+            isExtendedAccess: _hasExtendedAccess,
           ),
           const SizedBox(height: 24),
           _TestsSection(
             tests: _tests.take(3).toList(),
             isLoading: _isTestsLoading,
             errorText: _testsError,
+            isExtendedAccess: _hasExtendedAccess,
           ),
         ],
       ),
@@ -196,14 +216,43 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
   }
 }
 
-void _handleBottomNavigationTap(BuildContext context, int index) {
+void _handleBottomNavigationTap(
+  BuildContext context,
+  int index,
+  bool hasExtendedAccess,
+) {
   if (index == 0) {
+    return;
+  }
+
+  if (!hasExtendedAccess) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+    );
+    return;
+  }
+
+  if (index == 1) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
+      ),
+    );
+    return;
+  }
+
+  if (index == 2) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const CreateEventPlaceholderScreen(),
+      ),
+    );
     return;
   }
 
   Navigator.of(
     context,
-  ).push(MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()));
+  ).push(MaterialPageRoute<void>(builder: (context) => const ProfileScreen()));
 }
 
 class _TopBanner extends StatelessWidget {
@@ -251,11 +300,13 @@ class _ArticlesSection extends StatelessWidget {
     required this.materials,
     required this.isLoading,
     required this.errorText,
+    required this.isExtendedAccess,
   });
 
   final List<GuestMaterial> materials;
   final bool isLoading;
   final String? errorText;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +315,8 @@ class _ArticlesSection extends StatelessWidget {
       onSeeAll: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (context) => const ArticlesListScreen(),
+            builder: (context) =>
+                ArticlesListScreen(isExtendedAccess: isExtendedAccess),
           ),
         );
       },
@@ -306,11 +358,13 @@ class _TestsSection extends StatelessWidget {
     required this.tests,
     required this.isLoading,
     required this.errorText,
+    required this.isExtendedAccess,
   });
 
   final List<GuestTest> tests;
   final bool isLoading;
   final String? errorText;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -319,7 +373,8 @@ class _TestsSection extends StatelessWidget {
       onSeeAll: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (context) => const TestsListScreen(),
+            builder: (context) =>
+                TestsListScreen(isExtendedAccess: isExtendedAccess),
           ),
         );
       },

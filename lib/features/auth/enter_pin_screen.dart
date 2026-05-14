@@ -3,77 +3,68 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/session_service.dart';
 import '../guest/guest_home_screen.dart';
+import 'create_pin_screen.dart';
 
-class CreatePinScreen extends StatefulWidget {
-  const CreatePinScreen({super.key, this.isPasswordReset = false});
-
-  final bool isPasswordReset;
+class EnterPinScreen extends StatefulWidget {
+  const EnterPinScreen({super.key});
 
   @override
-  State<CreatePinScreen> createState() => _CreatePinScreenState();
+  State<EnterPinScreen> createState() => _EnterPinScreenState();
 }
 
-class _CreatePinScreenState extends State<CreatePinScreen> {
+class _EnterPinScreenState extends State<EnterPinScreen> {
   String _pin = '';
-  String _repeatPin = '';
   String? _errorText;
 
-  bool get _isEnteringRepeat => _pin.length == 4;
-  int get _activeRow => _isEnteringRepeat ? 1 : 0;
-  int get _activeIndex => _isEnteringRepeat ? _repeatPin.length : _pin.length;
-
   void _handleDigit(String digit) {
+    if (_pin.length == 4) {
+      return;
+    }
+
     setState(() {
       _errorText = null;
-      if (!_isEnteringRepeat) {
-        _pin += digit;
-      } else if (_repeatPin.length < 4) {
-        _repeatPin += digit;
-      }
+      _pin += digit;
     });
 
-    if (_pin.length == 4 && _repeatPin.length == 4) {
+    if (_pin.length == 4) {
       _submitPin();
     }
   }
 
   void _handleBackspace() {
+    if (_pin.isEmpty) {
+      return;
+    }
+
     setState(() {
       _errorText = null;
-      if (_repeatPin.isNotEmpty) {
-        _repeatPin = _repeatPin.substring(0, _repeatPin.length - 1);
-      } else if (_pin.isNotEmpty && _pin.length < 4) {
-        _pin = _pin.substring(0, _pin.length - 1);
-      }
+      _pin = _pin.substring(0, _pin.length - 1);
     });
   }
 
   Future<void> _submitPin() async {
-    if (_pin != _repeatPin) {
+    final sessionService = SessionService();
+    final isValidPin = await sessionService.verifyPin(_pin);
+
+    if (!isValidPin) {
       setState(() {
-        _errorText = 'ПИН-коды не совпадают';
-        _repeatPin = '';
+        _errorText = 'Неверный ПИН-код';
+        _pin = '';
       });
       return;
     }
 
-    final sessionService = SessionService();
-    if (widget.isPasswordReset) {
+    if (_pin != SessionService.demoPin) {
       await sessionService.updatePin(_pin);
-    } else {
-      await sessionService.activateDemoPatientSession(pin: _pin);
     }
 
     if (!mounted) {
       return;
     }
 
-    final message = widget.isPasswordReset
-        ? 'ПИН-код обновлён'
-        : 'Расширенный доступ активирован';
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showSnackBar(const SnackBar(content: Text('Вход выполнен')));
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
       (route) => false,
@@ -119,15 +110,9 @@ class _CreatePinScreenState extends State<CreatePinScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         _PinInputRow(
-                          label: 'Придумайте пин-код',
+                          label: 'Введите пин-код',
                           length: _pin.length,
-                          activeIndex: _activeRow == 0 ? _activeIndex : null,
-                        ),
-                        const SizedBox(height: 26),
-                        _PinInputRow(
-                          label: 'Повторите пин-код',
-                          length: _repeatPin.length,
-                          activeIndex: _activeRow == 1 ? _activeIndex : null,
+                          activeIndex: _pin.length,
                         ),
                         const SizedBox(height: 14),
                         SizedBox(
@@ -141,6 +126,41 @@ class _CreatePinScreenState extends State<CreatePinScreen> {
                                   color: AppColors.pinkAccent,
                                   fontWeight: FontWeight.w700,
                                 ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: _PinInputRow.rowWidth,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) => const CreatePinScreen(
+                                      isPasswordReset: true,
+                                    ),
+                                  ),
+                                );
+                              },
+                              behavior: HitTestBehavior.opaque,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                child: Text(
+                                  'Забыли пароль?',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: const Color(0xFFD9D9D9),
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: const Color(
+                                          0xFFD9D9D9,
+                                        ),
+                                      ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -169,7 +189,7 @@ class _PinInputRow extends StatelessWidget {
 
   final String label;
   final int length;
-  final int? activeIndex;
+  final int activeIndex;
 
   static const double cellWidth = 47;
   static const double gap = 17;

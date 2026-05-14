@@ -6,10 +6,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
+import '../events/create_event_placeholder_screen.dart';
+import '../guest/guest_home_screen.dart';
+import '../profile/profile_screen.dart';
 
 class ArticlesListScreen extends StatefulWidget {
-  const ArticlesListScreen({super.key});
+  const ArticlesListScreen({super.key, this.isExtendedAccess = false});
+
+  final bool isExtendedAccess;
 
   @override
   State<ArticlesListScreen> createState() => _ArticlesListScreenState();
@@ -19,13 +25,28 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
   final _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
+  late bool _isExtendedAccess;
   String? _errorText;
   List<ArticleListItem> _articles = const [];
 
   @override
   void initState() {
     super.initState();
+    _isExtendedAccess = widget.isExtendedAccess;
+    _loadAccessState();
     _loadArticles();
+  }
+
+  Future<void> _loadAccessState() async {
+    final hasExtendedAccess = await SessionService().hasExtendedAccess();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isExtendedAccess = widget.isExtendedAccess || hasExtendedAccess;
+    });
   }
 
   Future<void> _loadArticles() async {
@@ -104,7 +125,8 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
       backgroundColor: AppColors.background,
       bottomNavigationBar: GuestBottomNavigation(
         selectedIndex: 1,
-        onItemTap: (index) => _handleBottomNavigationTap(context, index),
+        onItemTap: (index) =>
+            _handleBottomNavigationTap(context, index, _isExtendedAccess),
       ),
       body: SafeArea(
         bottom: false,
@@ -136,6 +158,7 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
                       return _ArticleGridCard(
                         article: _articles[index],
                         imageAsset: assetByIndex(materialImageAssets, index),
+                        isExtendedAccess: _isExtendedAccess,
                       );
                     }, childCount: _articles.length),
                     gridDelegate:
@@ -200,10 +223,15 @@ class _ListHeader extends StatelessWidget {
 }
 
 class _ArticleGridCard extends StatelessWidget {
-  const _ArticleGridCard({required this.article, required this.imageAsset});
+  const _ArticleGridCard({
+    required this.article,
+    required this.imageAsset,
+    required this.isExtendedAccess,
+  });
 
   final ArticleListItem article;
   final String imageAsset;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -211,8 +239,8 @@ class _ArticleGridCard extends StatelessWidget {
       title: article.title,
       timeText: _minutesText(article.readingTimeMinutes),
       imageAsset: imageAsset,
-      isLocked: article.isLocked,
-      onTap: article.isLocked
+      isLocked: article.isLocked(isExtendedAccess),
+      onTap: article.isLocked(isExtendedAccess)
           ? () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -321,15 +349,42 @@ class _GridImageCard extends StatelessWidget {
   }
 }
 
-void _handleBottomNavigationTap(BuildContext context, int index) {
+void _handleBottomNavigationTap(
+  BuildContext context,
+  int index,
+  bool isExtendedAccess,
+) {
   if (index == 0) {
-    Navigator.of(context).pop();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      (route) => false,
+    );
     return;
   }
 
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()));
+  if (!isExtendedAccess) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+    );
+    return;
+  }
+
+  if (index == 1) {
+    return;
+  }
+
+  if (index == 2) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (context) => const CreateEventPlaceholderScreen(),
+      ),
+    );
+    return;
+  }
+
+  Navigator.of(context).pushReplacement(
+    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+  );
 }
 
 class _LockChip extends StatelessWidget {
@@ -410,7 +465,9 @@ class ArticleListItem {
   final int? readingTimeMinutes;
   final String accessLevel;
 
-  bool get isLocked => accessLevel != 'guest';
+  bool isLocked(bool isExtendedAccess) {
+    return !isExtendedAccess && accessLevel != 'guest';
+  }
 
   factory ArticleListItem.fromJson(Map<String, dynamic> json) {
     return ArticleListItem(

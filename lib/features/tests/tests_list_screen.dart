@@ -6,10 +6,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
+import '../events/create_event_placeholder_screen.dart';
+import '../guest/guest_home_screen.dart';
+import '../materials/articles_list_screen.dart';
+import '../profile/profile_screen.dart';
 
 class TestsListScreen extends StatefulWidget {
-  const TestsListScreen({super.key});
+  const TestsListScreen({super.key, this.isExtendedAccess = false});
+
+  final bool isExtendedAccess;
 
   @override
   State<TestsListScreen> createState() => _TestsListScreenState();
@@ -19,13 +26,28 @@ class _TestsListScreenState extends State<TestsListScreen> {
   final _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
+  late bool _isExtendedAccess;
   String? _errorText;
   List<TestListItem> _tests = const [];
 
   @override
   void initState() {
     super.initState();
+    _isExtendedAccess = widget.isExtendedAccess;
+    _loadAccessState();
     _loadTests();
+  }
+
+  Future<void> _loadAccessState() async {
+    final hasExtendedAccess = await SessionService().hasExtendedAccess();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isExtendedAccess = widget.isExtendedAccess || hasExtendedAccess;
+    });
   }
 
   Future<void> _loadTests() async {
@@ -100,7 +122,8 @@ class _TestsListScreenState extends State<TestsListScreen> {
       backgroundColor: AppColors.background,
       bottomNavigationBar: GuestBottomNavigation(
         selectedIndex: 1,
-        onItemTap: (index) => _handleBottomNavigationTap(context, index),
+        onItemTap: (index) =>
+            _handleBottomNavigationTap(context, index, _isExtendedAccess),
       ),
       body: SafeArea(
         bottom: false,
@@ -132,6 +155,7 @@ class _TestsListScreenState extends State<TestsListScreen> {
                       return _TestGridCard(
                         test: _tests[index],
                         imageAsset: assetByIndex(testImageAssets, index),
+                        isExtendedAccess: _isExtendedAccess,
                       );
                     }, childCount: _tests.length),
                     gridDelegate:
@@ -196,10 +220,15 @@ class _ListHeader extends StatelessWidget {
 }
 
 class _TestGridCard extends StatelessWidget {
-  const _TestGridCard({required this.test, required this.imageAsset});
+  const _TestGridCard({
+    required this.test,
+    required this.imageAsset,
+    required this.isExtendedAccess,
+  });
 
   final TestListItem test;
   final String imageAsset;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -207,8 +236,8 @@ class _TestGridCard extends StatelessWidget {
       title: test.name,
       timeText: _minutesText(test.estimatedTimeMinutes),
       imageAsset: imageAsset,
-      isLocked: test.isLocked,
-      onTap: test.isLocked
+      isLocked: test.isLocked(isExtendedAccess),
+      onTap: test.isLocked(isExtendedAccess)
           ? () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -317,15 +346,47 @@ class _GridImageCard extends StatelessWidget {
   }
 }
 
-void _handleBottomNavigationTap(BuildContext context, int index) {
+void _handleBottomNavigationTap(
+  BuildContext context,
+  int index,
+  bool isExtendedAccess,
+) {
   if (index == 0) {
-    Navigator.of(context).pop();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      (route) => false,
+    );
     return;
   }
 
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()));
+  if (!isExtendedAccess) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+    );
+    return;
+  }
+
+  if (index == 1) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
+      ),
+    );
+    return;
+  }
+
+  if (index == 2) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (context) => const CreateEventPlaceholderScreen(),
+      ),
+    );
+    return;
+  }
+
+  Navigator.of(context).pushReplacement(
+    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+  );
 }
 
 class _LockChip extends StatelessWidget {
@@ -406,7 +467,9 @@ class TestListItem {
   final String accessLevel;
   final int? estimatedTimeMinutes;
 
-  bool get isLocked => accessLevel != 'guest';
+  bool isLocked(bool isExtendedAccess) {
+    return !isExtendedAccess && accessLevel != 'guest';
+  }
 
   factory TestListItem.fromJson(Map<String, dynamic> json) {
     return TestListItem(

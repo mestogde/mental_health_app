@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import 'create_pin_screen.dart';
+import 'enter_pin_screen.dart';
 
 class QRAccessScreen extends StatefulWidget {
   const QRAccessScreen({super.key});
@@ -24,11 +25,21 @@ class _QRAccessScreenState extends State<QRAccessScreen> {
       return;
     }
 
+    final screenContext = context;
     await showDialog<void>(
-      context: context,
+      context: screenContext,
       barrierColor: Colors.black.withValues(alpha: 0.22),
-      builder: (context) {
-        return const _RegistrationNoticeDialog();
+      builder: (dialogContext) {
+        return _RegistrationNoticeDialog(
+          onRegistered: () {
+            Navigator.of(dialogContext).pop();
+            Navigator.of(screenContext).pushReplacement(
+              MaterialPageRoute<void>(
+                builder: (context) => const EnterPinScreen(),
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -112,7 +123,9 @@ class _QRAccessScreenState extends State<QRAccessScreen> {
 }
 
 class _RegistrationNoticeDialog extends StatelessWidget {
-  const _RegistrationNoticeDialog();
+  const _RegistrationNoticeDialog({required this.onRegistered});
+
+  final VoidCallback onRegistered;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +190,21 @@ class _RegistrationNoticeDialog extends StatelessWidget {
                     ),
                     child: const Text('Открыть сайт ЦМЗ'),
                   ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    onRegistered();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFF5F5F5),
+                    foregroundColor: AppColors.textDark,
+                    minimumSize: const Size.fromHeight(62),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(31),
+                    ),
+                  ),
+                  child: const Text('Я уже зарегистрирован'),
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
