@@ -562,7 +562,7 @@ class _EventRow extends StatelessWidget {
       chips.add(
         _StatusChip(
           text: '$requestsCount ${requestWord(requestsCount)} на участие',
-          color: AppColors.pinkAccent,
+          color: Colors.white,
         ),
       );
     }

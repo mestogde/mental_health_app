@@ -105,6 +105,13 @@ class EventRequestDetail {
         lower.contains('отправ');
   }
 
+  bool get isRejected {
+    final lower = status.toLowerCase();
+    return lower.contains('rejected') ||
+        lower.contains('declined') ||
+        lower.contains('отклон');
+  }
+
   factory EventRequestDetail.fromJson(Map<String, dynamic> json) {
     return EventRequestDetail(
       eventId: asString(json['event_id']),
@@ -132,6 +139,13 @@ class EventPatientProfile {
       return fullName;
     }
     return '$fullName, $age';
+  }
+
+  String get displayNameWithAge {
+    if (age == null) {
+      return fullName;
+    }
+    return '$fullName, $age ${ageWord(age!)}';
   }
 
   factory EventPatientProfile.fromJson(Map<String, dynamic> json) {
@@ -163,7 +177,7 @@ String eventStatusText(EventDetailItem event) {
 
 String requestStatusText(EventRequestDetail request) {
   if (request.isAccepted) {
-    return 'Вы участвуете';
+    return 'Принято';
   }
   if (request.isPending) {
     return 'Запрос отправлен';
@@ -216,6 +230,42 @@ String personWord(int count) {
     return 'человек';
   }
   return 'человека';
+}
+
+String ageWord(int count) {
+  final mod10 = count % 10;
+  final mod100 = count % 100;
+  if (mod10 == 1 && mod100 != 11) {
+    return 'год';
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'года';
+  }
+  return 'лет';
+}
+
+String requestWord(int count) {
+  final mod10 = count % 10;
+  final mod100 = count % 100;
+  if (mod10 == 1 && mod100 != 11) {
+    return 'запрос';
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'запроса';
+  }
+  return 'запросов';
+}
+
+String newRequestWord(int count) {
+  final mod10 = count % 10;
+  final mod100 = count % 100;
+  if (mod10 == 1 && mod100 != 11) {
+    return 'новый запрос';
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'новых запроса';
+  }
+  return 'новых запросов';
 }
 
 String asString(Object? value, {String fallback = ''}) {

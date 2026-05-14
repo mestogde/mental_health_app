@@ -255,7 +255,7 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
             _InfoRow(label: 'Формат', value: event.normalizedFormat),
             _InfoRow(
               label: 'Организатор',
-              value: _organizer?.displayName ?? 'Организатор',
+              value: _organizer?.displayNameWithAge ?? 'Не указан',
             ),
           ],
         ),
@@ -325,6 +325,9 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(29),
             ),
+            textStyle: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
           ),
           child: Text(_isSubmitting ? 'Отправка...' : 'Отправить запрос'),
         ),
@@ -361,7 +364,9 @@ class _EventDetailCard extends StatelessWidget {
               if (request != null) ...[
                 const SizedBox(width: 8),
                 _StatusChip(
-                  text: requestStatusText(request!),
+                  text: request!.isAccepted
+                      ? 'Вы участвуете'
+                      : requestStatusText(request!),
                   color: requestStatusColor(request!),
                 ),
               ],

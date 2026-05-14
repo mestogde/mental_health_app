@@ -8,6 +8,7 @@ import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
 import '../profile/profile_screen.dart';
 import 'event_detail_models.dart';
+import 'event_requests_screen.dart';
 
 class EventOwnerDetailScreen extends StatefulWidget {
   const EventOwnerDetailScreen({super.key, required this.eventId});
@@ -25,7 +26,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
   String? _errorText;
   EventDetailItem? _event;
   EventPatientProfile? _organizer;
-  List<_RequestWithPatient> _requests = const [];
+  List<EventRequestDetail> _requests = const [];
 
   @override
   void initState() {
@@ -58,7 +59,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
       final organizer = await _loadPatientProfile(
         event.creatorPatientId ?? currentPatientId,
       );
-      final requests = await _loadRequestsWithPatients();
+      final requests = await _loadRequests();
 
       if (!mounted) {
         return;
@@ -122,26 +123,17 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
     }
   }
 
-  Future<List<_RequestWithPatient>> _loadRequestsWithPatients() async {
+  Future<List<EventRequestDetail>> _loadRequests() async {
     final data = await _supabase
         .from('event_requests')
         .select('*')
         .eq('event_id', widget.eventId)
         .timeout(const Duration(seconds: 10));
 
-    final result = <_RequestWithPatient>[];
-    for (final row in data) {
-      final request = EventRequestDetail.fromJson(
-        Map<String, dynamic>.from(row),
-      );
-      result.add(
-        _RequestWithPatient(
-          request: request,
-          patient: await _loadPatientProfile(request.patientId),
-        ),
-      );
-    }
-    return result;
+    return [
+      for (final row in data)
+        EventRequestDetail.fromJson(Map<String, dynamic>.from(row)),
+    ];
   }
 
   @override
@@ -196,6 +188,9 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(29),
                 ),
+                textStyle: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
               ),
               child: const Text('Удалить'),
             ),
@@ -229,7 +224,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
             _InfoRow(label: 'Формат', value: event.normalizedFormat),
             _InfoRow(
               label: 'Организатор',
-              value: _organizer?.displayName ?? 'Организатор',
+              value: _organizer?.displayNameWithAge ?? 'Не указан',
             ),
           ],
         ),
@@ -250,19 +245,23 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
             ).textTheme.bodySmall?.copyWith(color: const Color(0xFF777777)),
           )
         else
-          for (final item in _requests) ...[
-            _RequestCard(item: item),
-            const SizedBox(height: 8),
-          ],
+          _RequestsSummaryRow(
+            count: _requests.length,
+            onTap: () async {
+              final changed = await Navigator.of(context).push<bool>(
+                MaterialPageRoute<bool>(
+                  builder: (context) =>
+                      EventRequestsScreen(eventId: widget.eventId),
+                ),
+              );
+              if (changed == true) {
+                await _loadDetails();
+              }
+            },
+          ),
       ],
     );
   }
-}
-
-class _RequestWithPatient {
-  const _RequestWithPatient({required this.request, required this.patient});
-  final EventRequestDetail request;
-  final EventPatientProfile? patient;
 }
 
 class _EventDetailCard extends StatelessWidget {
@@ -275,6 +274,16 @@ class _EventDetailCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: _StatusChip(
+              text: eventStatusText(event),
+              color: event.isApproved
+                  ? AppColors.greenStatus
+                  : const Color(0xFFD9D9D9),
+            ),
+          ),
+          const SizedBox(height: 4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -288,13 +297,6 @@ class _EventDetailCard extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              _StatusChip(
-                text: eventStatusText(event),
-                color: event.isApproved
-                    ? AppColors.greenStatus
-                    : const Color(0xFFD9D9D9),
               ),
             ],
           ),
@@ -325,44 +327,32 @@ class _EventDetailCard extends StatelessWidget {
   }
 }
 
-class _RequestCard extends StatelessWidget {
-  const _RequestCard({required this.item});
-  final _RequestWithPatient item;
+class _RequestsSummaryRow extends StatelessWidget {
+  const _RequestsSummaryRow({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return _SoftCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.patient?.displayName ?? 'Участник',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500),
-                ),
-              ),
-              _StatusChip(
-                text: requestStatusText(item.request),
-                color: requestStatusColor(item.request),
-              ),
-            ],
-          ),
-          if (item.request.text.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              item.request.text,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF777777),
-                height: 1.35,
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: _SoftCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$count ${newRequestWord(count)}',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500),
               ),
             ),
+            const Icon(Icons.chevron_right, size: 22, color: Color(0xFF777777)),
           ],
-        ],
+        ),
       ),
     );
   }
