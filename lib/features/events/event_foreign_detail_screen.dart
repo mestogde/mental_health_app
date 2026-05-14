@@ -442,13 +442,20 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(label, style: const TextStyle(color: Color(0xFF777777))),
-        const Spacer(),
-        Flexible(
+        SizedBox(
+          width: 104,
+          child: Text(label, style: const TextStyle(color: Color(0xFF777777))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 14),
           ),
         ),
       ],

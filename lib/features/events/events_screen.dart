@@ -65,16 +65,29 @@ class _EventsScreenState extends State<EventsScreen> {
         return;
       }
 
+      final loadedEvents = [
+        for (final row in rows)
+          EventItem.fromJson(Map<String, dynamic>.from(row)),
+      ];
+      final loadedRequests = [
+        for (final row in requestRows)
+          EventRequestItem.fromJson(Map<String, dynamic>.from(row)),
+      ];
+      final ownEventsCount = loadedEvents
+          .where(
+            (event) =>
+                event.creatorPatientId?.toString() == patientId.toString(),
+          )
+          .length;
+      debugPrint(
+        'Events loaded: total=${loadedEvents.length}, '
+        'own=$ownEventsCount, current_patient_id=$patientId',
+      );
+
       setState(() {
         _currentPatientId = patientId;
-        _events = [
-          for (final row in rows)
-            EventItem.fromJson(Map<String, dynamic>.from(row)),
-        ];
-        _requests = [
-          for (final row in requestRows)
-            EventRequestItem.fromJson(Map<String, dynamic>.from(row)),
-        ];
+        _events = loadedEvents;
+        _requests = loadedRequests;
         _isLoading = false;
       });
     } catch (error, stackTrace) {

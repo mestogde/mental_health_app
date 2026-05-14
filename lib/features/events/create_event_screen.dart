@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/session_service.dart';
 import '../guest/guest_home_screen.dart';
 import '../events/events_screen.dart';
 import '../profile/profile_screen.dart';
@@ -14,10 +16,12 @@ class CreateEventScreen extends StatefulWidget {
 }
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
+  final _supabase = Supabase.instance.client;
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
   final _descriptionController = TextEditingController();
 
+  bool _isSaving = false;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   String _participantCount = '2 человека';
@@ -71,7 +75,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     });
   }
 
-  void _saveEvent() {
+  Future<void> _saveEvent() async {
     final isMissingRequiredField =
         _titleController.text.trim().isEmpty ||
         _selectedDate == null ||
@@ -89,10 +93,93 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Событие отправлено на проверку')),
-    );
-    Navigator.of(context).pop();
+    if (_isSaving) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final patientId = await _loadCurrentPatientId();
+      final startsAt = _combinedStartsAt();
+      final now = DateTime.now().toIso8601String();
+      final eventPayload = {
+        'creator_patient_id': patientId,
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'event_format': _format,
+        'category': _category,
+        'location': _locationController.text.trim(),
+        'starts_at': startsAt.toIso8601String(),
+        'participant_limit': _participantLimitValue(),
+        'event_status': 'pending',
+        'created_at': now,
+        'updated_at': now,
+      };
+
+      final insertedEvents = await _supabase
+          .from('events')
+          .insert(eventPayload)
+          .select('event_id, event_status, creator_patient_id')
+          .timeout(const Duration(seconds: 10));
+      final insertedEvent = insertedEvents.isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(insertedEvents.first);
+      debugPrint(
+        'Created event id=${insertedEvent['event_id']} '
+        'status=${insertedEvent['event_status']} '
+        'creator_patient_id=${insertedEvent['creator_patient_id']}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Событие отправлено на проверку')),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Create event insert error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSaving = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить событие')),
+      );
+    }
+  }
+
+  Future<Object> _loadCurrentPatientId() async {
+    final externalId = await SessionService().getCurrentPatientExternalId();
+    final data = await _supabase
+        .from('patients')
+        .select('patient_id')
+        .eq('external_patient_id', externalId)
+        .limit(1)
+        .timeout(const Duration(seconds: 10));
+
+    if (data.isEmpty || data.first['patient_id'] == null) {
+      throw StateError('Patient not found for external id: $externalId');
+    }
+    return data.first['patient_id'];
+  }
+
+  DateTime _combinedStartsAt() {
+    final date = _selectedDate!;
+    final time = _selectedTime!;
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  int _participantLimitValue() {
+    return int.tryParse(_participantCount.split(' ').first) ?? 2;
   }
 
   @override
@@ -231,7 +318,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             right: 22,
             bottom: MediaQuery.paddingOf(context).bottom + 103,
             child: FilledButton(
-              onPressed: _saveEvent,
+              onPressed: _isSaving ? null : _saveEvent,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.pinkAccent,
                 foregroundColor: AppColors.textDark,
@@ -244,7 +331,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              child: const Text('Сохранить'),
+              child: Text(_isSaving ? 'Сохранение...' : 'Сохранить'),
             ),
           ),
         ],
