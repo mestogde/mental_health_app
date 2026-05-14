@@ -8,9 +8,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
-import '../events/create_event_placeholder_screen.dart';
+import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
-import '../materials/articles_list_screen.dart';
+import '../events/events_screen.dart';
 import '../profile/profile_screen.dart';
 
 class TestsListScreen extends StatefulWidget {
@@ -121,7 +121,7 @@ class _TestsListScreenState extends State<TestsListScreen> {
       extendBody: true,
       backgroundColor: AppColors.background,
       bottomNavigationBar: GuestBottomNavigation(
-        selectedIndex: 1,
+        selectedIndex: -1,
         onItemTap: (index) =>
             _handleBottomNavigationTap(context, index, _isExtendedAccess),
       ),
@@ -368,9 +368,7 @@ void _handleBottomNavigationTap(
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
-      ),
+      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
@@ -378,7 +376,7 @@ void _handleBottomNavigationTap(
   if (index == 2) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (context) => const CreateEventPlaceholderScreen(),
+        builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;

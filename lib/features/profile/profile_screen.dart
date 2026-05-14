@@ -4,9 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
-import '../events/create_event_placeholder_screen.dart';
+import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
-import '../materials/articles_list_screen.dart';
+import '../events/events_screen.dart';
 import 'doctor_recommendations_screen.dart';
 import 'state_notes_screen.dart';
 
@@ -448,9 +448,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
-      ),
+      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
@@ -458,7 +456,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
   if (index == 2) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (context) => const CreateEventPlaceholderScreen(),
+        builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;

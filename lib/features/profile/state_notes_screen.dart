@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
-import '../events/create_event_placeholder_screen.dart';
+import '../notes/new_state_note_screen.dart';
+import '../notes/state_note_detail_screen.dart';
+import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
-import '../materials/articles_list_screen.dart';
+import '../events/events_screen.dart';
 import 'profile_screen.dart';
 
 class StateNotesScreen extends StatefulWidget {
@@ -129,7 +131,7 @@ class _StateNotesScreenState extends State<StateNotesScreen> {
                   Padding(
                     padding: const EdgeInsets.only(left: 12),
                     child: Text(
-                      'фиксируйте свое состояние, чтобы отслеживать\nизменения со временем',
+                      'Фиксируйте свое состояние, чтобы отслеживать изменения со временем',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: const Color(0xFF777777),
                         height: 1.35,
@@ -147,12 +149,15 @@ class _StateNotesScreenState extends State<StateNotesScreen> {
             right: 20,
             bottom: MediaQuery.paddingOf(context).bottom + 103,
             child: FilledButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Добавление заметки будет реализовано далее'),
+              onPressed: () async {
+                final wasSaved = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (context) => const NewStateNoteScreen(),
                   ),
                 );
+                if (wasSaved == true) {
+                  await _loadNotes();
+                }
               },
               icon: const Icon(Icons.add, size: 30),
               label: const Text('Добавить заметку'),
@@ -199,7 +204,7 @@ class _StateNotesScreenState extends State<StateNotesScreen> {
           _MonthPill(label: group.key),
           const SizedBox(height: 20),
           for (final note in group.value) ...[
-            _NoteCard(note: note),
+            _NoteCard(note: note, onDeleted: _loadNotes),
             const SizedBox(height: 22),
           ],
         ],
@@ -209,95 +214,118 @@ class _StateNotesScreenState extends State<StateNotesScreen> {
 }
 
 class _NoteCard extends StatelessWidget {
-  const _NoteCard({required this.note});
+  const _NoteCard({required this.note, required this.onDeleted});
 
   final StateNoteItem note;
+  final Future<void> Function() onDeleted;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _MoodCircle(level: note.moodLevel),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        note.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.titleMedium?.copyWith(fontSize: 17),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        formatDate(note.createdAt),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF777777),
-                          fontSize: 12,
+    return GestureDetector(
+      onTap: () async {
+        final wasDeleted = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) => StateNoteDetailScreen(stateNoteId: note.id),
+          ),
+        );
+        if (wasDeleted == true && context.mounted) {
+          await onDeleted();
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Заметка удалена')));
+          }
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _MoodCircle(level: note.moodLevel),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          note.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleMedium?.copyWith(fontSize: 17),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          formatDate(note.createdAt),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: const Color(0xFF777777),
+                                fontSize: 12,
+                              ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const Icon(Icons.chevron_right, color: Color(0xFF777777)),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _MetricChip(
-                    icon: Icons.bolt_outlined,
-                    iconColor: AppColors.pinkAccent,
-                    label: 'Тревожность',
-                    value: note.anxietyLevel,
-                  ),
-                ),
-                Expanded(
-                  child: _MetricChip(
-                    icon: Icons.show_chart,
-                    iconColor: AppColors.yellowAccent,
-                    label: 'Настроение',
-                    value: note.moodLevel,
-                  ),
-                ),
-                Expanded(
-                  child: _MetricChip(
-                    icon: Icons.groups_2_outlined,
-                    iconColor: AppColors.blueAccent,
-                    label: 'Комфорт\nв общении',
-                    value: note.socialComfortLevel,
-                  ),
-                ),
-              ],
-            ),
-            if (note.comment.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(
-                note.comment,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  height: 1.35,
-                  color: AppColors.textDark,
-                ),
+                  const Icon(Icons.chevron_right, color: Color(0xFF777777)),
+                ],
               ),
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _MetricBlock(
+                      icon: Icons.bolt_outlined,
+                      color: AppColors.pinkAccent,
+                      label: 'Тревожность',
+                      value: note.anxietyLevel,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _MetricBlock(
+                      icon: Icons.show_chart,
+                      color: AppColors.yellowAccent,
+                      label: 'Настроение',
+                      value: note.moodLevel,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _MetricBlock(
+                      icon: Icons.groups_2_outlined,
+                      color: AppColors.blueAccent,
+                      label: 'Комфорт в общении',
+                      value: note.socialComfortLevel,
+                    ),
+                  ),
+                ],
+              ),
+              if (note.comment.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  note.comment,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    height: 1.35,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -327,61 +355,69 @@ class _MoodCircle extends StatelessWidget {
   }
 }
 
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({
+class _MetricBlock extends StatelessWidget {
+  const _MetricBlock({
     required this.icon,
-    required this.iconColor,
+    required this.color,
     required this.label,
     required this.value,
   });
 
   final IconData icon;
-  final Color iconColor;
+  final Color color;
   final String label;
   final int value;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(4),
+    final foregroundColor = Color.lerp(color, AppColors.textDark, 0.55)!;
+
+    return SizedBox(
+      height: 42,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.42),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SizedBox.square(
+              dimension: 22,
+              child: Icon(icon, size: 14, color: foregroundColor),
+            ),
           ),
-          child: SizedBox.square(
-            dimension: 20,
-            child: Icon(icon, size: 13, color: iconColor),
-          ),
-        ),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: const Color(0xFF777777),
-                  fontSize: 10,
+          const SizedBox(width: 5),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: const Color(0xFF777777),
+                    fontSize: 9.5,
+                    height: 1.08,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '$value/10',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: iconColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 2),
+                Text(
+                  '$value/10',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: foregroundColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -531,9 +567,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
-      ),
+      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
@@ -541,7 +575,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
   if (index == 2) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (context) => const CreateEventPlaceholderScreen(),
+        builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;

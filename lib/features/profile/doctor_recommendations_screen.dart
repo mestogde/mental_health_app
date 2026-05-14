@@ -4,9 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
-import '../events/create_event_placeholder_screen.dart';
+import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
-import '../materials/articles_list_screen.dart';
+import '../events/events_screen.dart';
+import 'doctor_recommendation_detail_screen.dart';
 import 'profile_screen.dart';
 
 class DoctorRecommendationsScreen extends StatefulWidget {
@@ -185,31 +186,43 @@ class _RecommendationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, right: 22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            recommendation.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => DoctorRecommendationDetailScreen(
+              recommendationId: recommendation.id,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '${formatDate(recommendation.receivedAt)} ${recommendation.preview}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF777777),
-              fontSize: 12,
+        );
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 20, right: 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              recommendation.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              '${formatDate(recommendation.receivedAt)} ${recommendation.preview}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF777777),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -368,9 +381,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
-      ),
+      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
@@ -378,7 +389,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
   if (index == 2) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (context) => const CreateEventPlaceholderScreen(),
+        builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;

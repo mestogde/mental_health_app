@@ -6,9 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/home_reminder_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
-import '../events/create_event_placeholder_screen.dart';
+import '../calendar/activity_calendar_screen.dart';
+import '../events/events_screen.dart';
 import '../materials/articles_list_screen.dart';
 import '../profile/profile_screen.dart';
 import '../tests/tests_list_screen.dart';
@@ -28,6 +30,7 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
   String? _materialsError;
   String? _testsError;
   bool _hasExtendedAccess = false;
+  List<HomeReminder> _reminders = const [];
   List<GuestMaterial> _materials = const [];
   List<GuestTest> _tests = const [];
 
@@ -48,6 +51,10 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
     setState(() {
       _hasExtendedAccess = hasExtendedAccess;
     });
+
+    if (hasExtendedAccess) {
+      await _loadReminders();
+    }
   }
 
   Future<void> _loadGuestContent() async {
@@ -58,7 +65,38 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
       _testsError = null;
     });
 
-    await Future.wait([_loadMaterialsSection(), _loadTestsSection()]);
+    await Future.wait([
+      _loadMaterialsSection(),
+      _loadTestsSection(),
+      if (_hasExtendedAccess) _loadReminders(),
+    ]);
+  }
+
+  Future<void> _loadReminders() async {
+    try {
+      final reminders = await HomeReminderService().loadReminders().timeout(
+        const Duration(seconds: 10),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _reminders = reminders;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Home reminders load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _reminders = const [];
+      });
+    }
   }
 
   Future<void> _loadMaterialsSection() async {
@@ -197,6 +235,10 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
         children: [
           const _TopBanner(),
           const SizedBox(height: 27),
+          if (_hasExtendedAccess && _reminders.isNotEmpty) ...[
+            _ReminderSection(reminders: _reminders),
+            const SizedBox(height: 24),
+          ],
           _ArticlesSection(
             materials: _materials,
             isLoading: _isMaterialsLoading,
@@ -233,18 +275,16 @@ void _handleBottomNavigationTap(
   }
 
   if (index == 1) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => const ArticlesListScreen(isExtendedAccess: true),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (context) => const EventsScreen()));
     return;
   }
 
   if (index == 2) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => const CreateEventPlaceholderScreen(),
+        builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;
@@ -288,6 +328,89 @@ class _TopBanner extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReminderSection extends StatelessWidget {
+  const _ReminderSection({required this.reminders});
+
+  final List<HomeReminder> reminders;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      child: Column(
+        children: [
+          for (var index = 0; index < reminders.length; index++) ...[
+            _ReminderCard(reminder: reminders[index]),
+            if (index < reminders.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReminderCard extends StatelessWidget {
+  const _ReminderCard({required this.reminder});
+
+  final HomeReminder reminder;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEvent = reminder.type == HomeReminderType.event;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(17, 14, 13, 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    reminder.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    reminder.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF777777),
+                      fontSize: 12,
+                      height: 1.22,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isEvent) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right,
+                color: Color(0xFF777777),
+                size: 20,
+              ),
+            ],
           ],
         ),
       ),
@@ -524,7 +647,7 @@ class _ArticleCard extends StatelessWidget {
                                 color: Colors.white,
                                 fontSize: 12,
                                 height: 1.08,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                               ),
                         ),
                         if (material.readingTimeMinutes != null) ...[
