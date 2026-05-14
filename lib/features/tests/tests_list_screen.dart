@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../auth/qr_access_screen.dart';
 
 class TestsListScreen extends StatefulWidget {
   const TestsListScreen({super.key});
@@ -97,7 +98,10 @@ class _TestsListScreenState extends State<TestsListScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,
-      bottomNavigationBar: const GuestBottomNavigation(selectedIndex: 1),
+      bottomNavigationBar: GuestBottomNavigation(
+        selectedIndex: 1,
+        onItemTap: (index) => _handleBottomNavigationTap(context, index),
+      ),
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -204,6 +208,15 @@ class _TestGridCard extends StatelessWidget {
       timeText: _minutesText(test.estimatedTimeMinutes),
       imageAsset: imageAsset,
       isLocked: test.isLocked,
+      onTap: test.isLocked
+          ? () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => const QRAccessScreen(),
+                ),
+              );
+            }
+          : null,
     );
   }
 }
@@ -214,87 +227,105 @@ class _GridImageCard extends StatelessWidget {
     required this.timeText,
     required this.imageAsset,
     required this.isLocked,
+    required this.onTap,
   });
 
   final String title;
   final String timeText;
   final String imageAsset;
   final bool isLocked;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            imageAsset,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return const _SoftImagePlaceholder();
-            },
-          ),
-          if (isLocked) ColoredBox(color: Colors.white.withValues(alpha: 0.22)),
-          Positioned(
-            left: 10,
-            top: 10,
-            child: AnimatedOpacity(
-              opacity: isLocked ? 1 : 0,
-              duration: const Duration(milliseconds: 150),
-              child: const _LockChip(),
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              imageAsset,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const _SoftImagePlaceholder();
+              },
             ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(14, 14, 12, 13),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1F1F1F).withValues(alpha: 0.38),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Colors.white,
-                          fontSize: 13,
-                          height: 1.07,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (timeText.isNotEmpty) ...[
-                        const SizedBox(height: 7),
+            if (isLocked)
+              ColoredBox(color: Colors.white.withValues(alpha: 0.22)),
+            Positioned(
+              left: 10,
+              top: 10,
+              child: AnimatedOpacity(
+                opacity: isLocked ? 1 : 0,
+                duration: const Duration(milliseconds: 150),
+                child: const _LockChip(),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(14, 14, 12, 13),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1F1F1F).withValues(alpha: 0.38),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          timeText,
-                          maxLines: 1,
+                          title,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall
+                          style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 11,
-                                height: 1,
+                                color: Colors.white,
+                                fontSize: 13,
+                                height: 1.07,
+                                fontWeight: FontWeight.w500,
                               ),
                         ),
+                        if (timeText.isNotEmpty) ...[
+                          const SizedBox(height: 7),
+                          Text(
+                            timeText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 11,
+                                  height: 1,
+                                ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+void _handleBottomNavigationTap(BuildContext context, int index) {
+  if (index == 0) {
+    Navigator.of(context).pop();
+    return;
+  }
+
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()));
 }
 
 class _LockChip extends StatelessWidget {

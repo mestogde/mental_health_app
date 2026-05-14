@@ -65,6 +65,7 @@ flutter:
   assets:
     - assets/images/splash.png
     - assets/images/home_banner.png
+    - assets/images/create_pin_bg.png
     - assets/images/materials/
     - assets/images/tests/
 

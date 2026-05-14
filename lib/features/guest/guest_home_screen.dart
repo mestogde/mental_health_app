@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../auth/qr_access_screen.dart';
 import '../materials/articles_list_screen.dart';
 import '../tests/tests_list_screen.dart';
 
@@ -163,7 +164,9 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,
-      bottomNavigationBar: const GuestBottomNavigation(),
+      bottomNavigationBar: GuestBottomNavigation(
+        onItemTap: (index) => _handleBottomNavigationTap(context, index),
+      ),
       body: _buildBody(context),
     );
   }
@@ -191,6 +194,16 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
       ),
     );
   }
+}
+
+void _handleBottomNavigationTap(BuildContext context, int index) {
+  if (index == 0) {
+    return;
+  }
+
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()));
 }
 
 class _TopBanner extends StatelessWidget {
