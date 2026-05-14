@@ -3,28 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
-
-const List<String> _materialImageAssets = [
-  'assets/images/materials/material_1.png',
-  'assets/images/materials/material_2.png',
-  'assets/images/materials/material_3.png',
-  'assets/images/materials/material_4.png',
-  'assets/images/materials/material_5.png',
-  'assets/images/materials/material_6.png',
-];
-
-const List<String> _testImageAssets = [
-  'assets/images/tests/test_1.png',
-  'assets/images/tests/test_2.png',
-  'assets/images/tests/test_3.png',
-  'assets/images/tests/test_4.png',
-  'assets/images/tests/test_5.png',
-  'assets/images/tests/test_6.png',
-  'assets/images/tests/test_7.png',
-  'assets/images/tests/test_8.png',
-  'assets/images/tests/test_9.png',
-];
+import '../../core/widgets/guest_bottom_navigation.dart';
+import '../materials/articles_list_screen.dart';
+import '../tests/tests_list_screen.dart';
 
 class GuestHomeScreen extends StatefulWidget {
   const GuestHomeScreen({super.key});
@@ -180,7 +163,7 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,
-      bottomNavigationBar: const _GuestBottomNavigation(),
+      bottomNavigationBar: const GuestBottomNavigation(),
       body: _buildBody(context),
     );
   }
@@ -263,7 +246,17 @@ class _ArticlesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _HomeSection(title: 'Статьи', child: _buildContent());
+    return _HomeSection(
+      title: 'Статьи',
+      onSeeAll: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => const ArticlesListScreen(),
+          ),
+        );
+      },
+      child: _buildContent(),
+    );
   }
 
   Widget _buildContent() {
@@ -287,7 +280,7 @@ class _ArticlesSection extends StatelessWidget {
               itemBuilder: (context, index) {
                 return _ArticleCard(
                   material: materials[index],
-                  imageAsset: _assetByIndex(_materialImageAssets, index),
+                  imageAsset: assetByIndex(materialImageAssets, index),
                 );
               },
             ),
@@ -308,7 +301,17 @@ class _TestsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _HomeSection(title: 'Тесты', child: _buildContent());
+    return _HomeSection(
+      title: 'Тесты',
+      onSeeAll: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => const TestsListScreen(),
+          ),
+        );
+      },
+      child: _buildContent(),
+    );
   }
 
   Widget _buildContent() {
@@ -337,7 +340,7 @@ class _TestsSection extends StatelessWidget {
                     for (var index = 0; index < tests.length; index++) ...[
                       _TestRow(
                         test: tests[index],
-                        imageAsset: _assetByIndex(_testImageAssets, index),
+                        imageAsset: assetByIndex(testImageAssets, index),
                       ),
                       if (index < tests.length - 1)
                         const Divider(
@@ -357,10 +360,11 @@ class _TestsSection extends StatelessWidget {
 }
 
 class _HomeSection extends StatelessWidget {
-  const _HomeSection({required this.title, required this.child});
+  const _HomeSection({required this.title, required this.child, this.onSeeAll});
 
   final String title;
   final Widget child;
+  final VoidCallback? onSeeAll;
 
   @override
   Widget build(BuildContext context) {
@@ -382,12 +386,19 @@ class _HomeSection extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                  'Смотреть все',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: const Color(0xFF777777),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
+                child: GestureDetector(
+                  onTap: onSeeAll,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Text(
+                      'Смотреть все',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: const Color(0xFF777777),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -534,72 +545,6 @@ class _TestRow extends StatelessWidget {
             const SizedBox(width: 8),
             const Icon(Icons.chevron_right, color: Color(0xFF777777), size: 20),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GuestBottomNavigation extends StatelessWidget {
-  const _GuestBottomNavigation();
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.paddingOf(context).bottom;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(22, 0, 22, bottomPadding + 40),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
-            ),
-            child: SizedBox(
-              height: 49,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: const [
-                  _BottomNavItem(icon: Icons.home_outlined, isSelected: true),
-                  _BottomNavItem(icon: Icons.layers_outlined),
-                  _BottomNavItem(icon: Icons.add),
-                  _BottomNavItem(icon: Icons.person_outline),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomNavItem extends StatelessWidget {
-  const _BottomNavItem({required this.icon, this.isSelected = false});
-
-  final IconData icon;
-  final bool isSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final iconColor = isSelected ? Colors.white : AppColors.textDark;
-
-    return SizedBox(
-      width: 49,
-      child: Center(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: isSelected ? 46 : 34,
-          height: isSelected ? 30 : 34,
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.textDark : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Icon(icon, size: 21, color: iconColor),
         ),
       ),
     );
@@ -945,8 +890,4 @@ int? _asInt(Object? value) {
   }
 
   return int.tryParse(value.toString());
-}
-
-String _assetByIndex(List<String> assets, int index) {
-  return assets[index % assets.length];
 }
