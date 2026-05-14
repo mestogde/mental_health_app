@@ -7,6 +7,8 @@ import '../../data/services/session_service.dart';
 import '../events/create_event_placeholder_screen.dart';
 import '../guest/guest_home_screen.dart';
 import '../materials/articles_list_screen.dart';
+import 'doctor_recommendations_screen.dart';
+import 'state_notes_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -351,9 +353,7 @@ class _ProfileMenuCard extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (context) => const _ProfileSubpagePlaceholder(
-                    title: 'Рекомендации врача',
-                  ),
+                  builder: (context) => const DoctorRecommendationsScreen(),
                 ),
               );
             },
@@ -365,9 +365,7 @@ class _ProfileMenuCard extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (context) => const _ProfileSubpagePlaceholder(
-                    title: 'Мои заметки о состоянии',
-                  ),
+                  builder: (context) => const StateNotesScreen(),
                 ),
               );
             },
@@ -435,57 +433,6 @@ class _SoftCard extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
       ),
       child: Padding(padding: padding, child: child),
-    );
-  }
-}
-
-class _ProfileSubpagePlaceholder extends StatelessWidget {
-  const _ProfileSubpagePlaceholder({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      backgroundColor: AppColors.background,
-      bottomNavigationBar: GuestBottomNavigation(
-        selectedIndex: 3,
-        onItemTap: (index) => _handleExtendedNavigation(context, index),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    '← Назад',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF777777),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 22),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
