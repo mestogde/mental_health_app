@@ -1,21 +1,23 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/demo/test_question_catalog.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/content_progress_service.dart';
+import '../../data/services/session_service.dart';
 
 class TestPassingScreen extends StatefulWidget {
   const TestPassingScreen({
     super.key,
     required this.testId,
+    this.externalTestId = '',
     required this.title,
     required this.description,
     required this.imageAsset,
   });
 
   final String testId;
+  final String externalTestId;
   final String title;
   final String description;
   final String imageAsset;
@@ -27,63 +29,34 @@ class TestPassingScreen extends StatefulWidget {
 class _TestPassingScreenState extends State<TestPassingScreen> {
   final _supabase = Supabase.instance.client;
 
-  late final Future<List<_TestQuestionData>> _questionsFuture;
+  late final List<TestQuestionDefinition> _questions;
   final Map<String, int> _answers = <String, int>{};
   bool _showResult = false;
   bool _isCompleting = false;
-  double _normalizedScore = 0;
+  double _averageScore = 0;
   String _conclusionText = '';
+  late final DateTime _startedAt;
 
   @override
   void initState() {
     super.initState();
-    _questionsFuture = _loadQuestions();
+    _startedAt = DateTime.now();
+    _questions = TestQuestionCatalog.questionsForTest(
+      externalTestId: widget.externalTestId,
+      testName: widget.title,
+    );
+    debugPrint(
+      'Local test catalog loaded: test="${widget.title}" '
+      'externalTestId=${widget.externalTestId} questions=${_questions.length}',
+    );
   }
 
-  Future<List<_TestQuestionData>> _loadQuestions() async {
-    final tables = <String>['test_questions', 'questions'];
-    for (final table in tables) {
-      try {
-        final data = await _supabase
-            .from(table)
-            .select()
-            .eq('test_id', widget.testId)
-            .timeout(const Duration(seconds: 10));
-
-        debugPrint(
-          'Test questions query table=$table total rows: ${data.length}',
-        );
-        if (data.isEmpty) {
-          continue;
-        }
-
-        final questions =
-            data
-                .map(
-                  (row) => _TestQuestionData.fromJson(
-                    Map<String, dynamic>.from(row),
-                  ),
-                )
-                .toList()
-              ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-        debugPrint('Loaded test questions count=${questions.length}');
-        return questions;
-      } catch (error, stackTrace) {
-        debugPrint('Test questions load error for table=$table: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    }
-
-    return const [];
-  }
-
-  Future<void> _completeTest(List<_TestQuestionData> questions) async {
+  Future<void> _completeTest() async {
     if (_isCompleting) {
       return;
     }
 
-    if (_answers.length < questions.length) {
+    if (_answers.length < _questions.length) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Ответьте на все вопросы')));
@@ -96,25 +69,27 @@ class _TestPassingScreenState extends State<TestPassingScreen> {
 
     try {
       await ContentProgressService.instance.markTestCompleted(widget.testId);
-      final maxScore = questions.fold<int>(
+      final totalScore = _questions.fold<int>(
         0,
-        (sum, question) => sum + question.maxScore,
+        (sum, question) => sum + (_answers[question.externalQuestionId] ?? 1),
       );
-      final totalScore = questions.fold<int>(
-        0,
-        (sum, question) => sum + (_answers[question.id] ?? 1),
-      );
-      final normalizedScore = maxScore <= 0
+      final averageScore = _questions.isEmpty
           ? 0.0
-          : (totalScore / maxScore) * 10;
+          : totalScore / _questions.length;
+      final conclusion = _buildConclusion(averageScore);
+      await _saveAttemptToSupabase(
+        totalScore: totalScore,
+        averageScore: averageScore,
+        conclusion: conclusion,
+      );
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _normalizedScore = normalizedScore;
-        _conclusionText = _buildConclusion(normalizedScore);
+        _averageScore = averageScore;
+        _conclusionText = conclusion;
         _showResult = true;
       });
     } catch (error, stackTrace) {
@@ -124,7 +99,7 @@ class _TestPassingScreenState extends State<TestPassingScreen> {
         return;
       }
       setState(() {
-        _normalizedScore = 0;
+        _averageScore = 0;
         _conclusionText = _buildConclusion(0);
         _showResult = true;
       });
@@ -137,11 +112,130 @@ class _TestPassingScreenState extends State<TestPassingScreen> {
     }
   }
 
-  String _buildConclusion(double normalizedScore) {
-    if (normalizedScore < 3.5) {
+  Future<bool> _saveAttemptToSupabase({
+    required int totalScore,
+    required double averageScore,
+    required String conclusion,
+  }) async {
+    var phase = 'resolve_patient_id';
+    try {
+      debugPrint(
+        'Test attempt summary: totalScore=$totalScore '
+        'averageScore=${averageScore.toStringAsFixed(1)}',
+      );
+      phase = 'resolve_patient_id';
+      debugPrint('Test save phase: $phase');
+      final patientId = await _loadCurrentPatientId();
+      debugPrint('Resolved patient_id for test save: $patientId');
+
+      final nowIso = DateTime.now().toIso8601String();
+      final attemptPayload = <String, dynamic>{
+        'patient_id': patientId,
+        'test_id': widget.testId,
+        'started_at': _startedAt.toIso8601String(),
+        'completed_at': nowIso,
+        'total_score': totalScore,
+        'interpretation': conclusion,
+        'conclusion': conclusion,
+        'attempt_status': 'completed',
+        'created_at': nowIso,
+        'updated_at': nowIso,
+      };
+
+      debugPrint('Test attempt payload: $attemptPayload');
+      phase = 'insert_test_attempts';
+      debugPrint('Test save phase: $phase');
+      final attemptRow = await _supabase
+          .from('test_attempts')
+          .insert(attemptPayload)
+          .select('test_attempt_id')
+          .single()
+          .timeout(const Duration(seconds: 10));
+      debugPrint('Test attempt insert returned row: $attemptRow');
+
+      final normalizedAttemptRow = Map<String, dynamic>.from(attemptRow);
+      final attemptId = _extractAttemptId(normalizedAttemptRow);
+      if (attemptId.isEmpty) {
+        throw StateError('Test attempt row has no id: $normalizedAttemptRow');
+      }
+      debugPrint('Resolved test_attempt_id for answers insert: $attemptId');
+
+      final answerPayloads = _questions
+          .map(
+            (question) => <String, dynamic>{
+              'test_attempt_id': attemptId,
+              'external_question_id': question.externalQuestionId,
+              'question_text': question.questionText,
+              'answer_value': (_answers[question.externalQuestionId] ?? 1)
+                  .toString(),
+              'answer_score': _answers[question.externalQuestionId] ?? 1,
+              'question_order': question.questionOrder,
+              'created_at': nowIso,
+              'updated_at': nowIso,
+            },
+          )
+          .toList();
+
+      debugPrint('Test answers payload count=${answerPayloads.length}');
+      for (final payload in answerPayloads) {
+        debugPrint('Test answer payload: $payload');
+      }
+      phase = 'insert_patient_answers';
+      debugPrint('Test save phase: $phase');
+      await _supabase
+          .from('patient_answers')
+          .insert(answerPayloads)
+          .timeout(const Duration(seconds: 10));
+
+      debugPrint('Test attempt save completed successfully.');
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('Test attempt save failed at phase: $phase');
+      if (error is PostgrestException) {
+        debugPrint('Test attempt save PostgrestException:');
+        debugPrint('message: ${error.message}');
+        debugPrint('code: ${error.code}');
+        debugPrint('details: ${error.details}');
+        debugPrint('hint: ${error.hint}');
+      }
+      debugPrint('Test attempt save error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  String _extractAttemptId(Map<String, dynamic> row) {
+    final candidate = row['test_attempt_id'] ?? row['id'] ?? row['attempt_id'];
+    return candidate?.toString().trim() ?? '';
+  }
+
+  Future<String> _loadCurrentPatientId() async {
+    final externalId = await SessionService().getCurrentPatientExternalId();
+    debugPrint('Resolving patient_id for external_patient_id=$externalId');
+    final data = await _supabase
+        .from('patients')
+        .select('patient_id')
+        .eq('external_patient_id', externalId)
+        .limit(1)
+        .timeout(const Duration(seconds: 10));
+
+    if (data.isEmpty) {
+      throw StateError('Patient not found for external id: $externalId');
+    }
+
+    final patientId = data.first['patient_id'];
+    if (patientId == null) {
+      throw StateError('Patient row has no patient_id');
+    }
+
+    return patientId.toString();
+  }
+
+  String _buildConclusion(double averageScore) {
+    if (averageScore <= 2.0) {
       return 'Сейчас признаки напряжения выражены слабо. Можно продолжать мягко отслеживать состояние.';
     }
-    if (normalizedScore < 6.8) {
+    if (averageScore <= 3.5) {
       return 'Есть умеренное напряжение. Попробуйте возвращаться к рекомендациям и выбирать спокойные форматы общения.';
     }
     return 'Напряжение выражено заметно. Лучше не торопиться и обсудить состояние со специалистом центра.';
@@ -161,62 +255,36 @@ class _TestPassingScreenState extends State<TestPassingScreen> {
         backgroundColor: AppColors.background,
         body: SafeArea(
           bottom: false,
-          child: FutureBuilder<List<_TestQuestionData>>(
-            future: _questionsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: AppColors.pinkAccent),
-                );
-              }
-
-              if (snapshot.hasError) {
-                return _TestEmptyState(
-                  title: widget.title,
-                  description: widget.description,
-                  imageAsset: widget.imageAsset,
-                  message: 'Не удалось загрузить тест.',
-                  onBack: () => Navigator.of(context).pop(false),
-                );
-              }
-
-              final questions = snapshot.data ?? const <_TestQuestionData>[];
-              if (questions.isEmpty && !_showResult) {
-                return _TestEmptyState(
+          child: _questions.isEmpty && !_showResult
+              ? _TestEmptyState(
                   title: widget.title,
                   description: widget.description,
                   imageAsset: widget.imageAsset,
                   message: 'Вопросы для теста пока не добавлены',
                   onBack: () => Navigator.of(context).pop(false),
-                );
-              }
-
-              if (_showResult) {
-                return _TestResultView(
+                )
+              : _showResult
+              ? _TestResultView(
                   title: widget.title,
                   conclusionText: _conclusionText,
-                  normalizedScore: _normalizedScore,
+                  averageScore: _averageScore,
                   onDone: () => Navigator.of(context).pop(true),
-                );
-              }
-
-              return _TestQuestionsView(
-                title: widget.title,
-                description: widget.description,
-                imageAsset: widget.imageAsset,
-                questions: questions,
-                answers: _answers,
-                isCompleting: _isCompleting,
-                onAnswerSelected: (questionId, optionIndex) {
-                  setState(() {
-                    _answers[questionId] = optionIndex + 1;
-                  });
-                },
-                onBack: () => Navigator.of(context).pop(false),
-                onComplete: () => _completeTest(questions),
-              );
-            },
-          ),
+                )
+              : _TestQuestionsView(
+                  title: widget.title,
+                  description: widget.description,
+                  imageAsset: widget.imageAsset,
+                  questions: _questions,
+                  answers: _answers,
+                  isCompleting: _isCompleting,
+                  onAnswerSelected: (questionId, selectedScore) {
+                    setState(() {
+                      _answers[questionId] = selectedScore;
+                    });
+                  },
+                  onBack: () => Navigator.of(context).pop(false),
+                  onComplete: _completeTest,
+                ),
         ),
       ),
     );
@@ -239,10 +307,10 @@ class _TestQuestionsView extends StatelessWidget {
   final String title;
   final String description;
   final String imageAsset;
-  final List<_TestQuestionData> questions;
+  final List<TestQuestionDefinition> questions;
   final Map<String, int> answers;
   final bool isCompleting;
-  final void Function(String questionId, int optionIndex) onAnswerSelected;
+  final void Function(String questionId, int selectedScore) onAnswerSelected;
   final VoidCallback onBack;
   final VoidCallback onComplete;
 
@@ -280,9 +348,11 @@ class _TestQuestionsView extends StatelessWidget {
           for (var index = 0; index < questions.length; index++) ...[
             _QuestionCard(
               question: questions[index],
-              selectedIndex: answers[questions[index].id]?.toInt(),
-              onSelected: (optionIndex) =>
-                  onAnswerSelected(questions[index].id, optionIndex),
+              selectedScore: answers[questions[index].externalQuestionId],
+              onSelected: (selectedScore) => onAnswerSelected(
+                questions[index].externalQuestionId,
+                selectedScore,
+              ),
             ),
             if (index < questions.length - 1) const SizedBox(height: 16),
           ],
@@ -322,13 +392,13 @@ class _TestResultView extends StatelessWidget {
   const _TestResultView({
     required this.title,
     required this.conclusionText,
-    required this.normalizedScore,
+    required this.averageScore,
     required this.onDone,
   });
 
   final String title;
   final String conclusionText;
-  final double normalizedScore;
+  final double averageScore;
   final VoidCallback onDone;
 
   @override
@@ -368,7 +438,7 @@ class _TestResultView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${normalizedScore.toStringAsFixed(1)}/10',
+                    '${averageScore.toStringAsFixed(1)}/5',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontSize: 28,
                       fontWeight: FontWeight.w600,
@@ -477,12 +547,12 @@ class _TestEmptyState extends StatelessWidget {
 class _QuestionCard extends StatelessWidget {
   const _QuestionCard({
     required this.question,
-    required this.selectedIndex,
+    required this.selectedScore,
     required this.onSelected,
   });
 
-  final _TestQuestionData question;
-  final int? selectedIndex;
+  final TestQuestionDefinition question;
+  final int? selectedScore;
   final ValueChanged<int> onSelected;
 
   @override
@@ -498,7 +568,7 @@ class _QuestionCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              question.text,
+              question.questionText,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 fontSize: 15,
                 height: 1.35,
@@ -506,30 +576,81 @@ class _QuestionCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                for (var index = 0; index < question.options.length; index++)
-                  ChoiceChip(
-                    label: Text(question.options[index]),
-                    selected: selectedIndex == index,
-                    onSelected: (_) => onSelected(index),
-                    selectedColor: AppColors.yellowAccent.withValues(
-                      alpha: 0.78,
-                    ),
-                    backgroundColor: AppColors.surface,
-                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textDark,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    side: BorderSide(
-                      color: selectedIndex == index
-                          ? AppColors.yellowAccent
-                          : Colors.black.withValues(alpha: 0.06),
+                for (
+                  var score = question.minValue;
+                  score <= question.maxValue;
+                  score++
+                )
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: GestureDetector(
+                        onTap: () => onSelected(score),
+                        behavior: HitTestBehavior.opaque,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: selectedScore == score
+                                ? AppColors.yellowAccent.withValues(alpha: 0.82)
+                                : AppColors.surface,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: selectedScore == score
+                                  ? AppColors.yellowAccent
+                                  : Colors.black.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$score',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.textDark,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    question.minLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF777777),
+                      fontSize: 11,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    question.maxLabel,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF777777),
+                      fontSize: 11,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -579,111 +700,4 @@ class _BackButton extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TestQuestionData {
-  const _TestQuestionData({
-    required this.id,
-    required this.text,
-    required this.options,
-    required this.sortIndex,
-  });
-
-  final String id;
-  final String text;
-  final List<String> options;
-  final int sortIndex;
-
-  int get maxScore => options.isEmpty ? 4 : options.length;
-
-  factory _TestQuestionData.fromJson(Map<String, dynamic> json) {
-    final options = _asStringList(
-      json['answer_options'] ??
-          json['options'] ??
-          json['variants'] ??
-          json['choices'] ??
-          json['answers'],
-    );
-    return _TestQuestionData(
-      id: _asString(
-        json['question_id'] ?? json['id'] ?? json['test_question_id'],
-        fallback: DateTime.now().microsecondsSinceEpoch.toString(),
-      ),
-      text: _asString(
-        json['question_text'] ??
-            json['question'] ??
-            json['text'] ??
-            json['title'] ??
-            json['body'] ??
-            json['prompt'],
-        fallback: 'Вопрос',
-      ),
-      options: options.isNotEmpty
-          ? options
-          : const ['Совсем нет', 'Скорее нет', 'Скорее да', 'Да'],
-      sortIndex:
-          _asInt(
-            json['question_order'] ??
-                json['order_index'] ??
-                json['sort_order'] ??
-                json['position'],
-          ) ??
-          0,
-    );
-  }
-}
-
-String _asString(Object? value, {String fallback = ''}) {
-  final text = value?.toString().trim();
-  if (text == null || text.isEmpty) {
-    return fallback;
-  }
-
-  return text;
-}
-
-int? _asInt(Object? value) {
-  if (value == null) {
-    return null;
-  }
-
-  if (value is int) {
-    return value;
-  }
-
-  return int.tryParse(value.toString());
-}
-
-List<String> _asStringList(Object? value) {
-  if (value == null) {
-    return const [];
-  }
-
-  if (value is List) {
-    return value
-        .map((item) => item?.toString().trim() ?? '')
-        .where((item) => item.isNotEmpty)
-        .toList();
-  }
-
-  final text = value.toString().trim();
-  if (text.isEmpty) {
-    return const [];
-  }
-
-  try {
-    final decoded = jsonDecode(text);
-    if (decoded is List) {
-      return decoded
-          .map((item) => item?.toString().trim() ?? '')
-          .where((item) => item.isNotEmpty)
-          .toList();
-    }
-  } catch (_) {}
-
-  return text
-      .split(RegExp(r'[;,|]'))
-      .map((item) => item.trim())
-      .where((item) => item.isNotEmpty)
-      .toList();
 }

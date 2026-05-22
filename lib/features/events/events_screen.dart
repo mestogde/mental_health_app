@@ -129,6 +129,10 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'Building EventsScreen background=${AppColors.background} '
+      'selectedTab=$_selectedTab',
+    );
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,

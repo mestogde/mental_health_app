@@ -709,24 +709,14 @@ class _TestsSection extends StatelessWidget {
                       index < visibleTests.length;
                       index++
                     ) ...[
-                      Builder(
-                        builder: (context) {
-                          final test = visibleTests[index];
-                          final isCompleted = completedTestIds.contains(
-                            test.id,
-                          );
-                          debugPrint(
-                            'Home test card: id=${test.id} name=${test.name} '
-                            'isCompleted=$isCompleted',
-                          );
-                          return _TestRow(
-                            test: test,
-                            imageAsset: assetByIndex(testImageAssets, index),
-                            isExtendedAccess: isExtendedAccess,
-                            isCompleted: isCompleted,
-                            onStatusChanged: onStatusChanged,
-                          );
-                        },
+                      _TestRow(
+                        test: visibleTests[index],
+                        imageAsset: assetByIndex(testImageAssets, index),
+                        isExtendedAccess: isExtendedAccess,
+                        isCompleted: completedTestIds.contains(
+                          visibleTests[index].id,
+                        ),
+                        onStatusChanged: onStatusChanged,
                       ),
                       if (index < visibleTests.length - 1)
                         const Divider(
@@ -957,6 +947,10 @@ class _TestRow extends StatelessWidget {
     final normalizedAccess = (test.accessLevel).toLowerCase().trim();
     final requiresExtended = normalizedAccess != 'guest';
     final shouldShowLock = !isExtendedAccess && requiresExtended;
+    debugPrint(
+      'Home test card: id=${test.id} name=${test.name} '
+      'isCompleted=$isCompleted',
+    );
 
     return GestureDetector(
       onTap: () async {
@@ -975,6 +969,7 @@ class _TestRow extends StatelessWidget {
           MaterialPageRoute<bool>(
             builder: (context) => TestPassingScreen(
               testId: test.id,
+              externalTestId: test.externalTestId,
               title: test.name,
               description: test.description,
               imageAsset: imageAsset,
@@ -1331,6 +1326,7 @@ class GuestTest {
     required this.estimatedTimeMinutes,
     required this.accessLevel,
     required this.imageUrl,
+    required this.externalTestId,
   });
 
   final String id;
@@ -1340,6 +1336,7 @@ class GuestTest {
   final int? estimatedTimeMinutes;
   final String accessLevel;
   final String? imageUrl;
+  final String externalTestId;
 
   factory GuestTest.fromJson(Map<String, dynamic> json) {
     return GuestTest(
@@ -1350,6 +1347,7 @@ class GuestTest {
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
       accessLevel: _asString(json['access_level'], fallback: 'guest'),
       imageUrl: _asNullableString(json['image_url']),
+      externalTestId: _asString(json['external_test_id']),
     );
   }
 }

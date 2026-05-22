@@ -212,6 +212,10 @@ class _ActivityCalendarScreenState extends State<ActivityCalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'Building ActivityCalendarScreen background=${AppColors.background} '
+      'month=$_displayedMonth',
+    );
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,

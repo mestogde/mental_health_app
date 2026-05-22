@@ -23,14 +23,22 @@ class AppTheme {
       displayColor: AppColors.textDark,
     );
 
+    const colorScheme = ColorScheme.light(
+      primary: AppColors.textDark,
+      secondary: AppColors.pinkAccent,
+      surface: AppColors.surface,
+      error: Color(0xFFB3261E),
+      onPrimary: Colors.white,
+      onSecondary: AppColors.textDark,
+      onSurface: AppColors.textDark,
+      onError: Colors.white,
+    );
+
     return ThemeData(
       useMaterial3: true,
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.blueAccent,
-        brightness: Brightness.light,
-        surface: AppColors.surface,
-      ),
+      canvasColor: AppColors.background,
+      colorScheme: colorScheme.copyWith(surfaceTint: Colors.transparent),
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.background,

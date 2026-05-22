@@ -14,6 +14,15 @@ class MentalHealthApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       navigatorObservers: [appRouteObserver],
+      builder: (context, child) {
+        debugPrint(
+          'Building MaterialApp shell background=${AppColors.background}',
+        );
+        return ColoredBox(
+          color: AppColors.background,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const SplashScreen(),
     );
   }

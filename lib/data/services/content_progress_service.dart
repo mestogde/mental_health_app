@@ -47,7 +47,6 @@ class ContentProgressService {
   Future<void> markTestCompleted(String testId) async {
     final normalizedId = testId.trim();
     await _storeLocalId(_completedTestsKey, normalizedId);
-    await _attemptSupabaseTestAttemptInsert(normalizedId);
   }
 
   Future<void> _storeLocalId(String key, String id) async {
@@ -83,40 +82,6 @@ class ContentProgressService {
       await _supabase.from('material_views').insert(payload);
     } catch (error, stackTrace) {
       debugPrint('Material view insert error: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  Future<void> _attemptSupabaseTestAttemptInsert(String testId) async {
-    try {
-      final patientId = await _resolveCurrentPatientId();
-      if (patientId == null) {
-        return;
-      }
-
-      final basePayload = {
-        'patient_id': patientId,
-        'test_id': testId,
-        'completed_at': DateTime.now().toIso8601String(),
-      };
-
-      final payloads = <Map<String, dynamic>>[
-        basePayload,
-        {...basePayload, 'status': 'completed'},
-      ];
-
-      for (final payload in payloads) {
-        try {
-          debugPrint('Test attempt insert payload: $payload');
-          await _supabase.from('test_attempts').insert(payload);
-          return;
-        } catch (error, stackTrace) {
-          debugPrint('Test attempt insert error: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-      }
-    } catch (error, stackTrace) {
-      debugPrint('Test attempt insert setup error: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }

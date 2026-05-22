@@ -55,6 +55,7 @@ class _QRAccessScreenState extends State<QRAccessScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('Building QRAccessScreen background=${AppColors.greyStatus}');
     return Scaffold(
       backgroundColor: AppColors.greyStatus,
       body: SafeArea(

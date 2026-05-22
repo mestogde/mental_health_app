@@ -238,6 +238,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'Building ProfileScreen background=${AppColors.background} '
+      'avatarLoaded=${_avatarBytes != null}',
+    );
     return Scaffold(
       extendBody: true,
       backgroundColor: AppColors.background,

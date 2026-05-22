@@ -358,6 +358,7 @@ class _TestGridCard extends StatelessWidget {
           MaterialPageRoute<bool>(
             builder: (context) => TestPassingScreen(
               testId: test.id,
+              externalTestId: test.externalTestId,
               title: test.name,
               description: test.description,
               imageAsset: imageAsset,
@@ -565,6 +566,7 @@ class TestListItem {
     required this.description,
     required this.accessLevel,
     required this.estimatedTimeMinutes,
+    required this.externalTestId,
   });
 
   final String id;
@@ -573,6 +575,7 @@ class TestListItem {
   final String description;
   final String accessLevel;
   final int? estimatedTimeMinutes;
+  final String externalTestId;
 
   bool isLocked(bool isExtendedAccess) {
     return accessLevel.toLowerCase().trim() != 'guest' && !isExtendedAccess;
@@ -586,6 +589,7 @@ class TestListItem {
       description: _asString(json['description']),
       accessLevel: _asString(json['access_level'], fallback: 'guest'),
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
+      externalTestId: _asString(json['external_test_id']),
     );
   }
 }
