@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import 'create_pin_screen.dart';
 import 'enter_pin_screen.dart';
@@ -34,7 +35,7 @@ class _QRAccessScreenState extends State<QRAccessScreen> {
           onRegistered: () {
             Navigator.of(dialogContext).pop();
             Navigator.of(screenContext).pushReplacement(
-              MaterialPageRoute<void>(
+              noTransitionPageRoute<void>(
                 builder: (context) => const EnterPinScreen(),
               ),
             );
@@ -46,7 +47,9 @@ class _QRAccessScreenState extends State<QRAccessScreen> {
 
   void _simulateQrSuccess() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (context) => const CreatePinScreen()),
+      noTransitionPageRoute<void>(
+        builder: (context) => const CreatePinScreen(),
+      ),
     );
   }
 

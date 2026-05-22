@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/assets/app_image_assets.dart';
+import '../../core/navigation/app_route_observer.dart';
+import '../../core/navigation/no_transition_page_route.dart';
+import '../../core/widgets/access_lock_badge.dart';
+import '../../core/widgets/content_status_badge.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
-import '../../core/utils/access_level.dart';
+import '../../data/services/content_progress_service.dart';
 import '../../data/services/home_reminder_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
@@ -14,8 +18,10 @@ import '../calendar/activity_calendar_screen.dart';
 import '../events/events_screen.dart';
 import '../events/event_foreign_detail_screen.dart';
 import '../events/event_owner_detail_screen.dart';
+import '../materials/article_detail_screen.dart';
 import '../materials/articles_list_screen.dart';
 import '../profile/profile_screen.dart';
+import '../tests/test_passing_screen.dart';
 import '../tests/tests_list_screen.dart';
 
 class GuestHomeScreen extends StatefulWidget {
@@ -25,7 +31,8 @@ class GuestHomeScreen extends StatefulWidget {
   State<GuestHomeScreen> createState() => _GuestHomeScreenState();
 }
 
-class _GuestHomeScreenState extends State<GuestHomeScreen> {
+class _GuestHomeScreenState extends State<GuestHomeScreen> with RouteAware {
+  bool _routeSubscribed = false;
   final _supabase = Supabase.instance.client;
 
   bool _isMaterialsLoading = true;
@@ -36,12 +43,67 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
   List<HomeReminder> _reminders = const [];
   List<GuestMaterial> _materials = const [];
   List<GuestTest> _tests = const [];
+  Set<String> _readMaterialIds = const {};
+  Set<String> _completedTestIds = const {};
 
   @override
   void initState() {
     super.initState();
     _loadAccessState();
+    _loadProgressState();
     _loadGuestContent();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_routeSubscribed) {
+      final route = ModalRoute.of(context);
+      if (route is PageRoute<dynamic>) {
+        appRouteObserver.subscribe(this, route);
+        _routeSubscribed = true;
+      }
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadProgressState();
+  }
+
+  @override
+  void dispose() {
+    if (_routeSubscribed) {
+      appRouteObserver.unsubscribe(this);
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadProgressState() async {
+    try {
+      final readMaterialIds = await ContentProgressService.instance
+          .getReadMaterialIds();
+      final completedTestIds = await ContentProgressService.instance
+          .getCompletedTestIds();
+
+      debugPrint(
+        'Home progress load: read=${readMaterialIds.length} '
+        'ids=${readMaterialIds.toList()} completed=${completedTestIds.length} '
+        'ids=${completedTestIds.toList()}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _readMaterialIds = readMaterialIds;
+        _completedTestIds = completedTestIds;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Guest progress load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _loadAccessState() async {
@@ -172,6 +234,25 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
           .eq('publication_status', 'active')
           .order('published_at', ascending: false);
 
+      debugPrint('Home materials query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Home materials row: title=${map['title']} access_level=${map['access_level']}',
+        );
+      }
+      if (data.isNotEmpty &&
+          data.every((row) {
+            final access = Map<String, dynamic>.from(
+              row,
+            )['access_level']?.toString().toLowerCase().trim();
+            return access == 'guest';
+          })) {
+        debugPrint(
+          'TODO: Home materials query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
+        );
+      }
+
       return _mapMaterials(data);
     } catch (error, stackTrace) {
       debugPrint(
@@ -186,6 +267,14 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
           )
           .eq('publication_status', 'active');
 
+      debugPrint('Home materials fallback query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Home materials fallback row: title=${map['title']} access_level=${map['access_level']}',
+        );
+      }
+
       return _mapMaterials(data);
     }
   }
@@ -198,6 +287,25 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
         )
         .eq('activity_status', 'active')
         .order('test_name');
+
+    debugPrint('Home tests query total rows: ${data.length}');
+    for (final row in data) {
+      final map = Map<String, dynamic>.from(row);
+      debugPrint(
+        'Home tests row: name=${map['test_name']} access_level=${map['access_level']}',
+      );
+    }
+    if (data.isNotEmpty &&
+        data.every((row) {
+          final access = Map<String, dynamic>.from(
+            row,
+          )['access_level']?.toString().toLowerCase().trim();
+          return access == 'guest';
+        })) {
+      debugPrint(
+        'TODO: Home tests query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
+      );
+    }
 
     return _mapTests(data);
   }
@@ -247,13 +355,17 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
             isLoading: _isMaterialsLoading,
             errorText: _materialsError,
             isExtendedAccess: _hasExtendedAccess,
+            readMaterialIds: _readMaterialIds,
+            onStatusChanged: _loadProgressState,
           ),
           const SizedBox(height: 24),
           _TestsSection(
-            tests: _tests.take(3).toList(),
+            tests: _tests,
             isLoading: _isTestsLoading,
             errorText: _testsError,
             isExtendedAccess: _hasExtendedAccess,
+            completedTestIds: _completedTestIds,
+            onStatusChanged: _loadProgressState,
           ),
         ],
       ),
@@ -290,30 +402,30 @@ void _handleBottomNavigationTap(
 
   if (!hasExtendedAccess) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+      noTransitionPageRoute<void>(builder: (context) => const QRAccessScreen()),
     );
     return;
   }
 
   if (index == 1) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (context) => const EventsScreen()));
+    Navigator.of(context).push(
+      noTransitionPageRoute<void>(builder: (context) => const EventsScreen()),
+    );
     return;
   }
 
   if (index == 2) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      noTransitionPageRoute<void>(
         builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;
   }
 
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (context) => const ProfileScreen()));
+  Navigator.of(context).push(
+    noTransitionPageRoute<void>(builder: (context) => const ProfileScreen()),
+  );
 }
 
 class _TopBanner extends StatelessWidget {
@@ -465,12 +577,16 @@ class _ArticlesSection extends StatelessWidget {
     required this.isLoading,
     required this.errorText,
     required this.isExtendedAccess,
+    required this.readMaterialIds,
+    required this.onStatusChanged,
   });
 
   final List<GuestMaterial> materials;
   final bool isLoading;
   final String? errorText;
   final bool isExtendedAccess;
+  final Set<String> readMaterialIds;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -507,10 +623,18 @@ class _ArticlesSection extends StatelessWidget {
               itemCount: materials.length,
               separatorBuilder: (context, index) => const SizedBox(width: 25),
               itemBuilder: (context, index) {
+                final material = materials[index];
+                final isRead = readMaterialIds.contains(material.id);
+                debugPrint(
+                  'Home article card: id=${material.id} title=${material.title} '
+                  'isRead=$isRead',
+                );
                 return _ArticleCard(
-                  material: materials[index],
+                  material: material,
                   imageAsset: assetByIndex(materialImageAssets, index),
                   isExtendedAccess: isExtendedAccess,
+                  isRead: isRead,
+                  onStatusChanged: onStatusChanged,
                 );
               },
             ),
@@ -524,12 +648,16 @@ class _TestsSection extends StatelessWidget {
     required this.isLoading,
     required this.errorText,
     required this.isExtendedAccess,
+    required this.completedTestIds,
+    required this.onStatusChanged,
   });
 
   final List<GuestTest> tests;
   final bool isLoading;
   final String? errorText;
   final bool isExtendedAccess;
+  final Set<String> completedTestIds;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -556,7 +684,13 @@ class _TestsSection extends StatelessWidget {
       return _SectionMessage(text: errorText!);
     }
 
-    return tests.isEmpty
+    final guestTests = tests
+        .where((test) => test.accessLevel.toLowerCase().trim() == 'guest')
+        .toList();
+
+    final visibleTests = guestTests.take(3).toList();
+
+    return visibleTests.isEmpty
         ? const _EmptySectionText(text: 'Пока нет открытых тестов.')
         : Padding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -570,13 +704,31 @@ class _TestsSection extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 child: Column(
                   children: [
-                    for (var index = 0; index < tests.length; index++) ...[
-                      _TestRow(
-                        test: tests[index],
-                        imageAsset: assetByIndex(testImageAssets, index),
-                        isExtendedAccess: isExtendedAccess,
+                    for (
+                      var index = 0;
+                      index < visibleTests.length;
+                      index++
+                    ) ...[
+                      Builder(
+                        builder: (context) {
+                          final test = visibleTests[index];
+                          final isCompleted = completedTestIds.contains(
+                            test.id,
+                          );
+                          debugPrint(
+                            'Home test card: id=${test.id} name=${test.name} '
+                            'isCompleted=$isCompleted',
+                          );
+                          return _TestRow(
+                            test: test,
+                            imageAsset: assetByIndex(testImageAssets, index),
+                            isExtendedAccess: isExtendedAccess,
+                            isCompleted: isCompleted,
+                            onStatusChanged: onStatusChanged,
+                          );
+                        },
                       ),
-                      if (index < tests.length - 1)
+                      if (index < visibleTests.length - 1)
                         const Divider(
                           height: 1,
                           thickness: 0.8,
@@ -651,32 +803,52 @@ class _ArticleCard extends StatelessWidget {
     required this.material,
     required this.imageAsset,
     required this.isExtendedAccess,
+    required this.isRead,
+    required this.onStatusChanged,
   });
 
   final GuestMaterial material;
   final String imageAsset;
   final bool isExtendedAccess;
+  final bool isRead;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
-    final shouldShowLock =
-        requiresExtendedAccess(material.accessLevel) && !isExtendedAccess;
-    debugPrint(
-      'Home article card build: title=${material.title}, '
-      'access_level=${material.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
-      'shouldShowLock=$shouldShowLock',
-    );
+    final normalizedAccess = (material.accessLevel).toLowerCase().trim();
+    final requiresExtended = normalizedAccess != 'guest';
+    final shouldShowLock = !isExtendedAccess && requiresExtended;
 
     return GestureDetector(
-      onTap: shouldShowLock
-          ? () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const QRAccessScreen(),
-                ),
-              );
-            }
-          : null,
+      onTap: () async {
+        if (shouldShowLock) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Этот материал доступен только в полной версии приложения',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final wasRead = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) => ArticleDetailScreen(
+              articleId: material.id,
+              title: material.title,
+              category: material.category,
+              summary: material.shortDescription,
+              readingTimeMinutes: material.readingTimeMinutes,
+              accessLevel: material.accessLevel,
+              imageAsset: imageAsset,
+            ),
+          ),
+        );
+        if (wasRead == true) {
+          await onStatusChanged();
+        }
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 125,
@@ -743,11 +915,21 @@ class _ArticleCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (isRead && !shouldShowLock)
+                    const Positioned(
+                      right: 9,
+                      top: 9,
+                      child: ContentStatusBadge(
+                        label: 'Прочитано',
+                        backgroundColor: AppColors.greenStatus,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                 ],
               ),
             ),
             if (shouldShowLock)
-              const Positioned(top: 9, right: 9, child: _LockBadge()),
+              const Positioned(top: 9, left: 9, child: AccessLockBadge()),
           ],
         ),
       ),
@@ -760,32 +942,49 @@ class _TestRow extends StatelessWidget {
     required this.test,
     required this.imageAsset,
     required this.isExtendedAccess,
+    required this.isCompleted,
+    required this.onStatusChanged,
   });
 
   final GuestTest test;
   final String imageAsset;
   final bool isExtendedAccess;
+  final bool isCompleted;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
-    final shouldShowLock =
-        requiresExtendedAccess(test.accessLevel) && !isExtendedAccess;
-    debugPrint(
-      'Home test card build: title=${test.name}, '
-      'access_level=${test.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
-      'shouldShowLock=$shouldShowLock',
-    );
+    final normalizedAccess = (test.accessLevel).toLowerCase().trim();
+    final requiresExtended = normalizedAccess != 'guest';
+    final shouldShowLock = !isExtendedAccess && requiresExtended;
 
     return GestureDetector(
-      onTap: shouldShowLock
-          ? () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const QRAccessScreen(),
-                ),
-              );
-            }
-          : null,
+      onTap: () async {
+        if (shouldShowLock) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Этот тест доступен только в полной версии приложения',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final wasCompleted = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) => TestPassingScreen(
+              testId: test.id,
+              title: test.name,
+              description: test.description,
+              imageAsset: imageAsset,
+            ),
+          ),
+        );
+        if (wasCompleted == true) {
+          await onStatusChanged();
+        }
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         height: 78,
@@ -793,15 +992,22 @@ class _TestRow extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(15, 8, 10, 8),
           child: Row(
             children: [
-              SizedBox.square(
-                dimension: 42,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(7),
-                  child: _AssetImageOrPlaceholder(
-                    assetPath: imageAsset,
-                    placeholder: const _TestThumbnailPlaceholder(),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  SizedBox.square(
+                    dimension: 42,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: _AssetImageOrPlaceholder(
+                        assetPath: imageAsset,
+                        placeholder: const _TestThumbnailPlaceholder(),
+                      ),
+                    ),
                   ),
-                ),
+                  if (shouldShowLock)
+                    const Positioned(left: 2, top: 2, child: AccessLockBadge()),
+                ],
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -832,14 +1038,21 @@ class _TestRow extends StatelessWidget {
                         fontWeight: FontWeight.w400,
                       ),
                     ),
+                    if (isCompleted && !shouldShowLock) ...[
+                      const SizedBox(height: 6),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: ContentStatusBadge(
+                          label: 'Пройдено',
+                          backgroundColor: AppColors.greenStatus,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              if (shouldShowLock) ...[
-                const _LockBadge(),
-                const SizedBox(width: 8),
-              ],
               const Icon(
                 Icons.chevron_right,
                 color: Color(0xFF777777),
@@ -848,25 +1061,6 @@ class _TestRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _LockBadge extends StatelessWidget {
-  const _LockBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
       ),
     );
   }

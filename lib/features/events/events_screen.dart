@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -847,7 +848,9 @@ class EventRequestItem {
 void _handleExtendedNavigation(BuildContext context, int index) {
   if (index == 0) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      noTransitionPageRoute<void>(
+        builder: (context) => const GuestHomeScreen(),
+      ),
       (route) => false,
     );
     return;
@@ -859,7 +862,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
 
   if (index == 2) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      noTransitionPageRoute<void>(
         builder: (context) => const ActivityCalendarScreen(),
       ),
     );
@@ -867,7 +870,7 @@ void _handleExtendedNavigation(BuildContext context, int index) {
   }
 
   Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+    noTransitionPageRoute<void>(builder: (context) => const ProfileScreen()),
   );
 }
 

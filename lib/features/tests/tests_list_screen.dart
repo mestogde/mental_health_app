@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/assets/app_image_assets.dart';
+import '../../core/navigation/app_route_observer.dart';
+import '../../core/navigation/no_transition_page_route.dart';
+import '../../core/widgets/access_lock_badge.dart';
+import '../../core/widgets/content_status_badge.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
-import '../../core/utils/access_level.dart';
+import '../../data/services/content_progress_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
 import '../events/events_screen.dart';
+import 'test_passing_screen.dart';
 import '../profile/profile_screen.dart';
 
 class TestsListScreen extends StatefulWidget {
@@ -23,20 +28,71 @@ class TestsListScreen extends StatefulWidget {
   State<TestsListScreen> createState() => _TestsListScreenState();
 }
 
-class _TestsListScreenState extends State<TestsListScreen> {
+class _TestsListScreenState extends State<TestsListScreen> with RouteAware {
+  bool _routeSubscribed = false;
   final _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
   late bool _isExtendedAccess;
   String? _errorText;
   List<TestListItem> _tests = const [];
+  Set<String> _completedTestIds = const {};
 
   @override
   void initState() {
     super.initState();
     _isExtendedAccess = widget.isExtendedAccess;
     _loadAccessState();
+    _loadProgressState();
     _loadTests();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_routeSubscribed) {
+      final route = ModalRoute.of(context);
+      if (route is PageRoute<dynamic>) {
+        appRouteObserver.subscribe(this, route);
+        _routeSubscribed = true;
+      }
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadProgressState();
+  }
+
+  @override
+  void dispose() {
+    if (_routeSubscribed) {
+      appRouteObserver.unsubscribe(this);
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadProgressState() async {
+    try {
+      final completedTestIds = await ContentProgressService.instance
+          .getCompletedTestIds();
+
+      debugPrint(
+        'Tests progress load: completed=${completedTestIds.length} '
+        'ids=${completedTestIds.toList()}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _completedTestIds = completedTestIds;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Tests progress load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _loadAccessState() async {
@@ -94,6 +150,25 @@ class _TestsListScreenState extends State<TestsListScreen> {
           .eq('activity_status', 'active')
           .order('test_name');
 
+      debugPrint('Tests query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Tests row: name=${map['test_name']} access_level=${map['access_level']}',
+        );
+      }
+      if (data.isNotEmpty &&
+          data.every((row) {
+            final access = Map<String, dynamic>.from(
+              row,
+            )['access_level']?.toString().toLowerCase().trim();
+            return access == 'guest';
+          })) {
+        debugPrint(
+          'TODO: Tests query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
+        );
+      }
+
       return _mapTests(data);
     } catch (error, stackTrace) {
       debugPrint('Tests ordered query error, retrying without order: $error');
@@ -105,6 +180,14 @@ class _TestsListScreenState extends State<TestsListScreen> {
             'test_id, test_name, test_type, description, access_level, activity_status, estimated_time_minutes',
           )
           .eq('activity_status', 'active');
+
+      debugPrint('Tests fallback query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Tests fallback row: name=${map['test_name']} access_level=${map['access_level']}',
+        );
+      }
 
       return _mapTests(data);
     }
@@ -136,7 +219,11 @@ class _TestsListScreenState extends State<TestsListScreen> {
               if (_isLoading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.pinkAccent,
+                    ),
+                  ),
                 )
               else if (_errorText != null)
                 SliverFillRemaining(
@@ -153,10 +240,18 @@ class _TestsListScreenState extends State<TestsListScreen> {
                   padding: const EdgeInsets.fromLTRB(25, 28, 28, 128),
                   sliver: SliverGrid(
                     delegate: SliverChildBuilderDelegate((context, index) {
+                      final test = _tests[index];
+                      final isCompleted = _completedTestIds.contains(test.id);
+                      debugPrint(
+                        'Tests list card: id=${test.id} name=${test.name} '
+                        'isCompleted=$isCompleted',
+                      );
                       return _TestGridCard(
-                        test: _tests[index],
+                        test: test,
                         imageAsset: assetByIndex(testImageAssets, index),
                         isExtendedAccess: _isExtendedAccess,
+                        isCompleted: isCompleted,
+                        onStatusChanged: _loadProgressState,
                       );
                     }, childCount: _tests.length),
                     gridDelegate:
@@ -225,36 +320,54 @@ class _TestGridCard extends StatelessWidget {
     required this.test,
     required this.imageAsset,
     required this.isExtendedAccess,
+    required this.isCompleted,
+    required this.onStatusChanged,
   });
 
   final TestListItem test;
   final String imageAsset;
   final bool isExtendedAccess;
+  final bool isCompleted;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
-    final shouldShowLock =
-        requiresExtendedAccess(test.accessLevel) && !isExtendedAccess;
-    debugPrint(
-      'Tests list card build: title=${test.name}, '
-      'access_level=${test.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
-      'shouldShowLock=$shouldShowLock',
-    );
+    final normalizedAccess = test.accessLevel.toLowerCase().trim();
+    final requiresExtended = normalizedAccess != 'guest';
+    final shouldShowLock = !isExtendedAccess && requiresExtended;
 
     return _GridImageCard(
       title: test.name,
       timeText: _minutesText(test.estimatedTimeMinutes),
       imageAsset: imageAsset,
       isLocked: shouldShowLock,
-      onTap: shouldShowLock
-          ? () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const QRAccessScreen(),
-                ),
-              );
-            }
-          : null,
+      isCompleted: isCompleted,
+      onTap: () async {
+        if (shouldShowLock) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Этот тест доступен только в полной версии приложения',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final wasCompleted = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) => TestPassingScreen(
+              testId: test.id,
+              title: test.name,
+              description: test.description,
+              imageAsset: imageAsset,
+            ),
+          ),
+        );
+        if (wasCompleted == true) {
+          await onStatusChanged();
+        }
+      },
     );
   }
 }
@@ -265,6 +378,7 @@ class _GridImageCard extends StatelessWidget {
     required this.timeText,
     required this.imageAsset,
     required this.isLocked,
+    required this.isCompleted,
     required this.onTap,
   });
 
@@ -272,6 +386,7 @@ class _GridImageCard extends StatelessWidget {
   final String timeText;
   final String imageAsset;
   final bool isLocked;
+  final bool isCompleted;
   final VoidCallback? onTap;
 
   @override
@@ -291,16 +406,17 @@ class _GridImageCard extends StatelessWidget {
               },
             ),
             if (isLocked)
-              ColoredBox(color: Colors.white.withValues(alpha: 0.22)),
-            Positioned(
-              left: 10,
-              top: 10,
-              child: AnimatedOpacity(
-                opacity: isLocked ? 1 : 0,
-                duration: const Duration(milliseconds: 150),
-                child: const _LockChip(),
+              const Positioned(left: 10, top: 10, child: AccessLockBadge()),
+            if (isCompleted && !isLocked)
+              const Positioned(
+                right: 10,
+                top: 10,
+                child: ContentStatusBadge(
+                  label: 'Пройдено',
+                  backgroundColor: AppColors.greenStatus,
+                  foregroundColor: Colors.white,
+                ),
               ),
-            ),
             Align(
               alignment: Alignment.bottomCenter,
               child: ClipRect(
@@ -362,7 +478,9 @@ void _handleBottomNavigationTap(
 ) {
   if (index == 0) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      noTransitionPageRoute<void>(
+        builder: (context) => const GuestHomeScreen(),
+      ),
       (route) => false,
     );
     return;
@@ -370,21 +488,21 @@ void _handleBottomNavigationTap(
 
   if (!isExtendedAccess) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+      noTransitionPageRoute<void>(builder: (context) => const QRAccessScreen()),
     );
     return;
   }
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
+      noTransitionPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
 
   if (index == 2) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      noTransitionPageRoute<void>(
         builder: (context) => const ActivityCalendarScreen(),
       ),
     );
@@ -392,27 +510,8 @@ void _handleBottomNavigationTap(
   }
 
   Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+    noTransitionPageRoute<void>(builder: (context) => const ProfileScreen()),
   );
-}
-
-class _LockChip extends StatelessWidget {
-  const _LockChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
-      ),
-    );
-  }
 }
 
 class _SoftImagePlaceholder extends StatelessWidget {
@@ -476,7 +575,7 @@ class TestListItem {
   final int? estimatedTimeMinutes;
 
   bool isLocked(bool isExtendedAccess) {
-    return requiresExtendedAccess(accessLevel) && !isExtendedAccess;
+    return accessLevel.toLowerCase().trim() != 'guest' && !isExtendedAccess;
   }
 
   factory TestListItem.fromJson(Map<String, dynamic> json) {

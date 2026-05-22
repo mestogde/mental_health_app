@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/assets/app_image_assets.dart';
+import '../../core/navigation/app_route_observer.dart';
+import '../../core/navigation/no_transition_page_route.dart';
+import '../../core/widgets/access_lock_badge.dart';
+import '../../core/widgets/content_status_badge.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
-import '../../core/utils/access_level.dart';
+import '../../data/services/content_progress_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../events/events_screen.dart';
 import '../guest/guest_home_screen.dart';
+import 'article_detail_screen.dart';
 import '../profile/profile_screen.dart';
 
 class ArticlesListScreen extends StatefulWidget {
@@ -23,20 +28,72 @@ class ArticlesListScreen extends StatefulWidget {
   State<ArticlesListScreen> createState() => _ArticlesListScreenState();
 }
 
-class _ArticlesListScreenState extends State<ArticlesListScreen> {
+class _ArticlesListScreenState extends State<ArticlesListScreen>
+    with RouteAware {
+  bool _routeSubscribed = false;
   final _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
   late bool _isExtendedAccess;
   String? _errorText;
   List<ArticleListItem> _articles = const [];
+  Set<String> _readMaterialIds = const {};
 
   @override
   void initState() {
     super.initState();
     _isExtendedAccess = widget.isExtendedAccess;
     _loadAccessState();
+    _loadProgressState();
     _loadArticles();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_routeSubscribed) {
+      final route = ModalRoute.of(context);
+      if (route is PageRoute<dynamic>) {
+        appRouteObserver.subscribe(this, route);
+        _routeSubscribed = true;
+      }
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadProgressState();
+  }
+
+  @override
+  void dispose() {
+    if (_routeSubscribed) {
+      appRouteObserver.unsubscribe(this);
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadProgressState() async {
+    try {
+      final readMaterialIds = await ContentProgressService.instance
+          .getReadMaterialIds();
+
+      debugPrint(
+        'Articles progress load: read=${readMaterialIds.length} '
+        'ids=${readMaterialIds.toList()}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _readMaterialIds = readMaterialIds;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Articles progress load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _loadAccessState() async {
@@ -96,6 +153,25 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
           .eq('publication_status', 'active')
           .order('published_at', ascending: false);
 
+      debugPrint('Articles query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Articles row: title=${map['title']} access_level=${map['access_level']}',
+        );
+      }
+      if (data.isNotEmpty &&
+          data.every((row) {
+            final access = Map<String, dynamic>.from(
+              row,
+            )['access_level']?.toString().toLowerCase().trim();
+            return access == 'guest';
+          })) {
+        debugPrint(
+          'TODO: Articles query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
+        );
+      }
+
       return _mapArticles(data);
     } catch (error, stackTrace) {
       debugPrint(
@@ -109,6 +185,14 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
             'material_id, title, category, short_description, reading_time_minutes, access_level, publication_status, published_at',
           )
           .eq('publication_status', 'active');
+
+      debugPrint('Articles fallback query total rows: ${data.length}');
+      for (final row in data) {
+        final map = Map<String, dynamic>.from(row);
+        debugPrint(
+          'Articles fallback row: title=${map['title']} access_level=${map['access_level']}',
+        );
+      }
 
       return _mapArticles(data);
     }
@@ -140,7 +224,11 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
               if (_isLoading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.pinkAccent,
+                    ),
+                  ),
                 )
               else if (_errorText != null)
                 SliverFillRemaining(
@@ -157,10 +245,18 @@ class _ArticlesListScreenState extends State<ArticlesListScreen> {
                   padding: const EdgeInsets.fromLTRB(25, 28, 28, 128),
                   sliver: SliverGrid(
                     delegate: SliverChildBuilderDelegate((context, index) {
+                      final article = _articles[index];
+                      final isRead = _readMaterialIds.contains(article.id);
+                      debugPrint(
+                        'Article list card: id=${article.id} title=${article.title} '
+                        'isRead=$isRead',
+                      );
                       return _ArticleGridCard(
-                        article: _articles[index],
+                        article: article,
                         imageAsset: assetByIndex(materialImageAssets, index),
                         isExtendedAccess: _isExtendedAccess,
+                        isRead: isRead,
+                        onStatusChanged: _loadProgressState,
                       );
                     }, childCount: _articles.length),
                     gridDelegate:
@@ -229,36 +325,57 @@ class _ArticleGridCard extends StatelessWidget {
     required this.article,
     required this.imageAsset,
     required this.isExtendedAccess,
+    required this.isRead,
+    required this.onStatusChanged,
   });
 
   final ArticleListItem article;
   final String imageAsset;
   final bool isExtendedAccess;
+  final bool isRead;
+  final Future<void> Function() onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
-    final shouldShowLock =
-        requiresExtendedAccess(article.accessLevel) && !isExtendedAccess;
-    debugPrint(
-      'Articles list card build: title=${article.title}, '
-      'access_level=${article.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
-      'shouldShowLock=$shouldShowLock',
-    );
+    final normalizedAccess = article.accessLevel.toLowerCase().trim();
+    final requiresExtended = normalizedAccess != 'guest';
+    final shouldShowLock = !isExtendedAccess && requiresExtended;
 
     return _GridImageCard(
       title: article.title,
       timeText: _minutesText(article.readingTimeMinutes),
       imageAsset: imageAsset,
       isLocked: shouldShowLock,
-      onTap: shouldShowLock
-          ? () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => const QRAccessScreen(),
-                ),
-              );
-            }
-          : null,
+      isRead: isRead,
+      onTap: () async {
+        if (shouldShowLock) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Этот материал доступен только в полной версии приложения',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final wasRead = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            builder: (context) => ArticleDetailScreen(
+              articleId: article.id,
+              title: article.title,
+              category: article.category,
+              summary: article.shortDescription,
+              readingTimeMinutes: article.readingTimeMinutes,
+              accessLevel: article.accessLevel,
+              imageAsset: imageAsset,
+            ),
+          ),
+        );
+        if (wasRead == true) {
+          await onStatusChanged();
+        }
+      },
     );
   }
 }
@@ -269,6 +386,7 @@ class _GridImageCard extends StatelessWidget {
     required this.timeText,
     required this.imageAsset,
     required this.isLocked,
+    required this.isRead,
     required this.onTap,
   });
 
@@ -276,6 +394,7 @@ class _GridImageCard extends StatelessWidget {
   final String timeText;
   final String imageAsset;
   final bool isLocked;
+  final bool isRead;
   final VoidCallback? onTap;
 
   @override
@@ -295,16 +414,17 @@ class _GridImageCard extends StatelessWidget {
               },
             ),
             if (isLocked)
-              ColoredBox(color: Colors.white.withValues(alpha: 0.22)),
-            Positioned(
-              left: 10,
-              top: 10,
-              child: AnimatedOpacity(
-                opacity: isLocked ? 1 : 0,
-                duration: const Duration(milliseconds: 150),
-                child: const _LockChip(),
+              const Positioned(left: 10, top: 10, child: AccessLockBadge()),
+            if (isRead && !isLocked)
+              const Positioned(
+                right: 10,
+                top: 10,
+                child: ContentStatusBadge(
+                  label: 'Прочитано',
+                  backgroundColor: AppColors.greenStatus,
+                  foregroundColor: Colors.white,
+                ),
               ),
-            ),
             Align(
               alignment: Alignment.bottomCenter,
               child: ClipRect(
@@ -366,7 +486,9 @@ void _handleBottomNavigationTap(
 ) {
   if (index == 0) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      noTransitionPageRoute<void>(
+        builder: (context) => const GuestHomeScreen(),
+      ),
       (route) => false,
     );
     return;
@@ -374,21 +496,21 @@ void _handleBottomNavigationTap(
 
   if (!isExtendedAccess) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const QRAccessScreen()),
+      noTransitionPageRoute<void>(builder: (context) => const QRAccessScreen()),
     );
     return;
   }
 
   if (index == 1) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
+      noTransitionPageRoute<void>(builder: (context) => const EventsScreen()),
     );
     return;
   }
 
   if (index == 2) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      noTransitionPageRoute<void>(
         builder: (context) => const ActivityCalendarScreen(),
       ),
     );
@@ -396,27 +518,8 @@ void _handleBottomNavigationTap(
   }
 
   Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+    noTransitionPageRoute<void>(builder: (context) => const ProfileScreen()),
   );
-}
-
-class _LockChip extends StatelessWidget {
-  const _LockChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
-      ),
-    );
-  }
 }
 
 class _SoftImagePlaceholder extends StatelessWidget {
@@ -480,7 +583,7 @@ class ArticleListItem {
   final String accessLevel;
 
   bool isLocked(bool isExtendedAccess) {
-    return requiresExtendedAccess(accessLevel) && !isExtendedAccess;
+    return accessLevel.toLowerCase().trim() != 'guest' && !isExtendedAccess;
   }
 
   factory ArticleListItem.fromJson(Map<String, dynamic> json) {

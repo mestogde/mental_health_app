@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/session_service.dart';
@@ -417,7 +418,9 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
     if (_isLoading) {
       return const SizedBox(
         height: 360,
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.pinkAccent),
+        ),
       );
     }
     if (_errorText != null) {
@@ -767,7 +770,9 @@ class _MessageText extends StatelessWidget {
 void _handleExtendedNavigation(BuildContext context, int index) {
   if (index == 0) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (context) => const GuestHomeScreen()),
+      noTransitionPageRoute<void>(
+        builder: (context) => const GuestHomeScreen(),
+      ),
       (route) => false,
     );
     return;
@@ -777,13 +782,13 @@ void _handleExtendedNavigation(BuildContext context, int index) {
   }
   if (index == 2) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      noTransitionPageRoute<void>(
         builder: (context) => const ActivityCalendarScreen(),
       ),
     );
     return;
   }
   Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (context) => const ProfileScreen()),
+    noTransitionPageRoute<void>(builder: (context) => const ProfileScreen()),
   );
 }

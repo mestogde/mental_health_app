@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/navigation/app_route_observer.dart';
 import '../core/theme/app_theme.dart';
 import '../features/splash/splash_screen.dart';
 
@@ -12,6 +13,7 @@ class MentalHealthApp extends StatelessWidget {
       title: 'ЦМЗ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      navigatorObservers: [appRouteObserver],
       home: const SplashScreen(),
     );
   }
