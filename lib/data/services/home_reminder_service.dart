@@ -75,6 +75,10 @@ class HomeReminderService {
 
       return HomeReminder(
         type: HomeReminderType.consultation,
+        eventId: null,
+        creatorPatientId: null,
+        currentPatientId: patientId,
+        isOwnEvent: false,
         title: 'Консультация ${nearbyDatePhrase(date)}',
         subtitle: formatReminderDateTime(date),
         dateTime: date,
@@ -87,41 +91,82 @@ class HomeReminderService {
   }
 
   Future<HomeReminder?> _loadNearestEvent(Object patientId) async {
-    final events = <_EventCandidate>[];
-    events.addAll(await _loadAcceptedEvents(patientId));
-    events.addAll(await _loadCreatedEvents(patientId));
+    try {
+      final now = DateTime.now();
+      final events = <_EventCandidate>[
+        ...await _loadApprovedCreatedEvents(patientId, now),
+        ...await _loadAcceptedParticipationEvents(patientId, now),
+      ];
 
-    final now = DateTime.now();
-    final upcoming = events.where((event) => !event.startsAt.isBefore(now));
-    if (upcoming.isEmpty) {
+      final uniqueEvents = <String, _EventCandidate>{};
+      for (final event in events) {
+        if (event.id != null && event.id!.isNotEmpty) {
+          uniqueEvents.putIfAbsent(event.id!, () => event);
+        } else {
+          uniqueEvents.putIfAbsent(
+            '${event.title}_${event.startsAt.toIso8601String()}',
+            () => event,
+          );
+        }
+      }
+
+      final upcoming =
+          uniqueEvents.values
+              .where((event) => !event.startsAt.isBefore(now))
+              .toList()
+            ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+
+      if (upcoming.isEmpty) {
+        return null;
+      }
+
+      final nearest = upcoming.first;
+
+      return HomeReminder(
+        type: HomeReminderType.event,
+        eventId: nearest.id,
+        creatorPatientId: nearest.creatorPatientId,
+        currentPatientId: patientId,
+        isOwnEvent: nearest.isOwnEvent,
+        title: 'Событие ${nearbyDatePhrase(nearest.startsAt)}',
+        subtitle:
+            '${nearest.title}, ${formatReminderDateTime(nearest.startsAt)}',
+        dateTime: nearest.startsAt,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Home event reminder load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
       return null;
     }
-
-    final nearest = upcoming.reduce(
-      (a, b) => a.startsAt.isBefore(b.startsAt) ? a : b,
-    );
-
-    return HomeReminder(
-      type: HomeReminderType.event,
-      title: 'Событие ${nearbyDatePhrase(nearest.startsAt)}',
-      subtitle: '${nearest.title}, ${formatReminderDateTime(nearest.startsAt)}',
-      dateTime: nearest.startsAt,
-    );
   }
 
-  Future<List<_EventCandidate>> _loadAcceptedEvents(Object patientId) async {
+  Future<List<_EventCandidate>> _loadAcceptedParticipationEvents(
+    Object patientId,
+    DateTime now,
+  ) async {
     try {
       final data = await _supabase
           .from('event_requests')
-          .select('events(*)')
+          .select(
+            'request_status, events(event_id, title, starts_at, event_status, creator_patient_id)',
+          )
           .eq('patient_id', patientId)
           .eq('request_status', 'accepted')
           .timeout(const Duration(seconds: 10));
 
-      return [
-        for (final row in data)
-          ..._eventCandidatesFromJoinedValue(row['events']),
-      ];
+      final events = <_EventCandidate>[];
+      for (final row in data) {
+        if (!_isAcceptedStatus(row['request_status'])) {
+          continue;
+        }
+        final candidates = _eventCandidatesFromJoinedValue(row['events']);
+        for (final candidate in candidates) {
+          if (!candidate.startsAt.isBefore(now)) {
+            events.add(candidate);
+          }
+        }
+      }
+      return events;
     } catch (error, stackTrace) {
       debugPrint('Home accepted event reminders load error: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -129,35 +174,38 @@ class HomeReminderService {
     }
   }
 
-  Future<List<_EventCandidate>> _loadCreatedEvents(Object patientId) async {
-    for (final column in const [
-      'patient_id',
-      'creator_patient_id',
-      'created_by_patient_id',
-      'owner_patient_id',
-    ]) {
-      try {
-        final data = await _supabase
-            .from('events')
-            .select('*')
-            .eq(column, patientId)
-            .timeout(const Duration(seconds: 10));
+  Future<List<_EventCandidate>> _loadApprovedCreatedEvents(
+    Object patientId,
+    DateTime now,
+  ) async {
+    try {
+      final data = await _supabase
+          .from('events')
+          .select(
+            'event_id, title, starts_at, event_status, creator_patient_id',
+          )
+          .eq('creator_patient_id', patientId)
+          .gte('starts_at', now.toIso8601String())
+          .timeout(const Duration(seconds: 10));
 
-        final events = [
-          for (final row in data)
-            if (_eventCandidateFromMap(Map<String, dynamic>.from(row)) != null)
-              _eventCandidateFromMap(Map<String, dynamic>.from(row))!,
-        ];
-        if (events.isNotEmpty) {
-          return events;
-        }
-      } catch (error, stackTrace) {
-        debugPrint('Home created event query failed for $column: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
+      return [
+        for (final row in data)
+          if (_eventCandidateFromMap(
+                    Map<String, dynamic>.from(row),
+                    isOwnEvent: true,
+                  ) !=
+                  null &&
+              _isApprovedStatus(row['event_status']))
+            _eventCandidateFromMap(
+              Map<String, dynamic>.from(row),
+              isOwnEvent: true,
+            )!,
+      ];
+    } catch (error, stackTrace) {
+      debugPrint('Home created event load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return const [];
     }
-
-    return const [];
   }
 }
 
@@ -166,27 +214,44 @@ enum HomeReminderType { consultation, event }
 class HomeReminder {
   const HomeReminder({
     required this.type,
+    required this.eventId,
+    required this.creatorPatientId,
+    required this.currentPatientId,
+    required this.isOwnEvent,
     required this.title,
     required this.subtitle,
     required this.dateTime,
   });
 
   final HomeReminderType type;
+  final String? eventId;
+  final Object? creatorPatientId;
+  final Object? currentPatientId;
+  final bool isOwnEvent;
   final String title;
   final String subtitle;
   final DateTime dateTime;
 }
 
 class _EventCandidate {
-  const _EventCandidate({required this.title, required this.startsAt});
+  const _EventCandidate({
+    required this.id,
+    required this.creatorPatientId,
+    required this.isOwnEvent,
+    required this.title,
+    required this.startsAt,
+  });
 
+  final String? id;
+  final Object? creatorPatientId;
+  final bool isOwnEvent;
   final String title;
   final DateTime startsAt;
 }
 
 List<_EventCandidate> _eventCandidatesFromJoinedValue(Object? value) {
   if (value is Map<String, dynamic>) {
-    final candidate = _eventCandidateFromMap(value);
+    final candidate = _eventCandidateFromMap(value, isOwnEvent: false);
     return candidate == null ? const [] : [candidate];
   }
 
@@ -194,21 +259,32 @@ List<_EventCandidate> _eventCandidatesFromJoinedValue(Object? value) {
     return [
       for (final item in value)
         if (item is Map<String, dynamic> &&
-            _eventCandidateFromMap(item) != null)
-          _eventCandidateFromMap(item)!,
+            _eventCandidateFromMap(item, isOwnEvent: false) != null)
+          _eventCandidateFromMap(item, isOwnEvent: false)!,
     ];
   }
 
   return const [];
 }
 
-_EventCandidate? _eventCandidateFromMap(Map<String, dynamic> json) {
+_EventCandidate? _eventCandidateFromMap(
+  Map<String, dynamic> json, {
+  required bool isOwnEvent,
+}) {
   final startsAt = _asDateTime(json['starts_at']);
   if (startsAt == null) {
     return null;
   }
 
   return _EventCandidate(
+    id: _asString(json['event_id'] ?? json['id'], fallback: '').isEmpty
+        ? null
+        : _asString(json['event_id'] ?? json['id'], fallback: ''),
+    creatorPatientId:
+        json['creator_patient_id'] ??
+        json['patient_id'] ??
+        json['owner_patient_id'],
+    isOwnEvent: isOwnEvent,
     title: _asString(
       json['title'] ?? json['event_name'] ?? json['name'],
       fallback: 'Событие',
@@ -282,4 +358,22 @@ String _asString(Object? value, {required String fallback}) {
     return fallback;
   }
   return text;
+}
+
+bool _isApprovedStatus(Object? status) {
+  final lower = status?.toString().toLowerCase() ?? '';
+  return lower.contains('approved') ||
+      lower.contains('published') ||
+      lower.contains('active') ||
+      lower.contains('одобр') ||
+      lower.contains('провер');
+}
+
+bool _isAcceptedStatus(Object? status) {
+  final lower = status?.toString().toLowerCase() ?? '';
+  return lower.contains('accepted') ||
+      lower.contains('confirmed') ||
+      lower.contains('approved') ||
+      lower.contains('принят') ||
+      lower.contains('подтверж');
 }

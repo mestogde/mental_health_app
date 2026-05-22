@@ -6,11 +6,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../core/utils/access_level.dart';
 import '../../data/services/home_reminder_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../events/events_screen.dart';
+import '../events/event_foreign_detail_screen.dart';
+import '../events/event_owner_detail_screen.dart';
 import '../materials/articles_list_screen.dart';
 import '../profile/profile_screen.dart';
 import '../tests/tests_list_screen.dart';
@@ -166,7 +169,6 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
           .select(
             'material_id, title, category, short_description, reading_time_minutes, image_url, access_level, publication_status',
           )
-          .eq('access_level', 'guest')
           .eq('publication_status', 'active')
           .order('published_at', ascending: false);
 
@@ -182,7 +184,6 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
           .select(
             'material_id, title, category, short_description, reading_time_minutes, image_url, access_level, publication_status',
           )
-          .eq('access_level', 'guest')
           .eq('publication_status', 'active');
 
       return _mapMaterials(data);
@@ -195,7 +196,6 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
         .select(
           'test_id, test_name, test_type, description, access_level, activity_status, estimated_time_minutes, image_url',
         )
-        .eq('access_level', 'guest')
         .eq('activity_status', 'active')
         .order('test_name');
 
@@ -236,7 +236,10 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
           const _TopBanner(),
           const SizedBox(height: 27),
           if (_hasExtendedAccess && _reminders.isNotEmpty) ...[
-            _ReminderSection(reminders: _reminders),
+            _ReminderSection(
+              reminders: _reminders,
+              onEventTap: _handleReminderTap,
+            ),
             const SizedBox(height: 24),
           ],
           _ArticlesSection(
@@ -255,6 +258,24 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleReminderTap(HomeReminder reminder) async {
+    if (reminder.type != HomeReminderType.event || reminder.eventId == null) {
+      debugPrint('Home reminder tap skipped: missing event data');
+      return;
+    }
+
+    final route = MaterialPageRoute<bool>(
+      builder: (context) => reminder.isOwnEvent
+          ? EventOwnerDetailScreen(eventId: reminder.eventId!)
+          : EventForeignDetailScreen(eventId: reminder.eventId!),
+    );
+
+    final result = await Navigator.of(context).push(route);
+    if (result == true && mounted) {
+      await _loadReminders();
+    }
   }
 }
 
@@ -336,9 +357,10 @@ class _TopBanner extends StatelessWidget {
 }
 
 class _ReminderSection extends StatelessWidget {
-  const _ReminderSection({required this.reminders});
+  const _ReminderSection({required this.reminders, required this.onEventTap});
 
   final List<HomeReminder> reminders;
+  final Future<void> Function(HomeReminder reminder) onEventTap;
 
   @override
   Widget build(BuildContext context) {
@@ -347,7 +369,12 @@ class _ReminderSection extends StatelessWidget {
       child: Column(
         children: [
           for (var index = 0; index < reminders.length; index++) ...[
-            _ReminderCard(reminder: reminders[index]),
+            _ReminderCard(
+              reminder: reminders[index],
+              onTap: reminders[index].type == HomeReminderType.event
+                  ? () => onEventTap(reminders[index])
+                  : null,
+            ),
             if (index < reminders.length - 1) const SizedBox(height: 10),
           ],
         ],
@@ -357,15 +384,16 @@ class _ReminderSection extends StatelessWidget {
 }
 
 class _ReminderCard extends StatelessWidget {
-  const _ReminderCard({required this.reminder});
+  const _ReminderCard({required this.reminder, this.onTap});
 
   final HomeReminder reminder;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final isEvent = reminder.type == HomeReminderType.event;
 
-    return DecoratedBox(
+    final card = DecoratedBox(
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
@@ -413,6 +441,19 @@ class _ReminderCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+
+    if (onTap == null) {
+      return card;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: card,
       ),
     );
   }
@@ -469,6 +510,7 @@ class _ArticlesSection extends StatelessWidget {
                 return _ArticleCard(
                   material: materials[index],
                   imageAsset: assetByIndex(materialImageAssets, index),
+                  isExtendedAccess: isExtendedAccess,
                 );
               },
             ),
@@ -532,6 +574,7 @@ class _TestsSection extends StatelessWidget {
                       _TestRow(
                         test: tests[index],
                         imageAsset: assetByIndex(testImageAssets, index),
+                        isExtendedAccess: isExtendedAccess,
                       ),
                       if (index < tests.length - 1)
                         const Divider(
@@ -604,72 +647,107 @@ class _HomeSection extends StatelessWidget {
 }
 
 class _ArticleCard extends StatelessWidget {
-  const _ArticleCard({required this.material, required this.imageAsset});
+  const _ArticleCard({
+    required this.material,
+    required this.imageAsset,
+    required this.isExtendedAccess,
+  });
 
   final GuestMaterial material;
   final String imageAsset;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 125,
-      height: 168,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+    final shouldShowLock =
+        requiresExtendedAccess(material.accessLevel) && !isExtendedAccess;
+    debugPrint(
+      'Home article card build: title=${material.title}, '
+      'access_level=${material.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
+      'shouldShowLock=$shouldShowLock',
+    );
+
+    return GestureDetector(
+      onTap: shouldShowLock
+          ? () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => const QRAccessScreen(),
+                ),
+              );
+            }
+          : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 125,
+        height: 168,
         child: Stack(
-          fit: StackFit.expand,
           children: [
-            _AssetImageOrPlaceholder(
-              assetPath: imageAsset,
-              placeholder: const _SoftArticlePlaceholder(),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(12, 10, 10, 11),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2A2A2A).withValues(alpha: 0.34),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          material.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: Colors.white,
-                                fontSize: 12,
-                                height: 1.08,
-                                fontWeight: FontWeight.w500,
-                              ),
-                        ),
-                        if (material.readingTimeMinutes != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            _shortMinutes(material.readingTimeMinutes),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.86),
-                                  fontSize: 10,
-                                  height: 1,
-                                ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _AssetImageOrPlaceholder(
+                    assetPath: imageAsset,
+                    placeholder: const _SoftArticlePlaceholder(),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(12, 10, 10, 11),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF2A2A2A,
+                            ).withValues(alpha: 0.34),
                           ),
-                        ],
-                      ],
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                material.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      height: 1.08,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
+                              if (material.readingTimeMinutes != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  _shortMinutes(material.readingTimeMinutes),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.86,
+                                        ),
+                                        fontSize: 10,
+                                        height: 1,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
+            if (shouldShowLock)
+              const Positioned(top: 9, right: 9, child: _LockBadge()),
           ],
         ),
       ),
@@ -678,65 +756,117 @@ class _ArticleCard extends StatelessWidget {
 }
 
 class _TestRow extends StatelessWidget {
-  const _TestRow({required this.test, required this.imageAsset});
+  const _TestRow({
+    required this.test,
+    required this.imageAsset,
+    required this.isExtendedAccess,
+  });
 
   final GuestTest test;
   final String imageAsset;
+  final bool isExtendedAccess;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 78,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(15, 8, 10, 8),
-        child: Row(
-          children: [
-            SizedBox.square(
-              dimension: 42,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(7),
-                child: _AssetImageOrPlaceholder(
-                  assetPath: imageAsset,
-                  placeholder: const _TestThumbnailPlaceholder(),
+    final shouldShowLock =
+        requiresExtendedAccess(test.accessLevel) && !isExtendedAccess;
+    debugPrint(
+      'Home test card build: title=${test.name}, '
+      'access_level=${test.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
+      'shouldShowLock=$shouldShowLock',
+    );
+
+    return GestureDetector(
+      onTap: shouldShowLock
+          ? () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => const QRAccessScreen(),
+                ),
+              );
+            }
+          : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height: 78,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(15, 8, 10, 8),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 42,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(7),
+                  child: _AssetImageOrPlaceholder(
+                    assetPath: imageAsset,
+                    placeholder: const _TestThumbnailPlaceholder(),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Flexible(
-                    child: Text(
-                      test.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                        height: 1.12,
-                        fontWeight: FontWeight.w500,
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        test.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 15,
+                          height: 1.12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    _testDuration(test.estimatedTimeMinutes),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: const Color(0xFF777777),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
+                    const SizedBox(height: 5),
+                    Text(
+                      _testDuration(test.estimatedTimeMinutes),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: const Color(0xFF777777),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, color: Color(0xFF777777), size: 20),
-          ],
+              const SizedBox(width: 8),
+              if (shouldShowLock) ...[
+                const _LockBadge(),
+                const SizedBox(width: 8),
+              ],
+              const Icon(
+                Icons.chevron_right,
+                color: Color(0xFF777777),
+                size: 20,
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _LockBadge extends StatelessWidget {
+  const _LockBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
       ),
     );
   }
@@ -973,6 +1103,7 @@ class GuestMaterial {
     required this.category,
     required this.shortDescription,
     required this.readingTimeMinutes,
+    required this.accessLevel,
     required this.imageUrl,
   });
 
@@ -981,6 +1112,7 @@ class GuestMaterial {
   final String category;
   final String shortDescription;
   final int? readingTimeMinutes;
+  final String accessLevel;
   final String? imageUrl;
 
   factory GuestMaterial.fromJson(Map<String, dynamic> json) {
@@ -990,6 +1122,7 @@ class GuestMaterial {
       category: _asString(json['category']),
       shortDescription: _asString(json['short_description']),
       readingTimeMinutes: _asInt(json['reading_time_minutes']),
+      accessLevel: _asString(json['access_level'], fallback: 'guest'),
       imageUrl: _asNullableString(json['image_url']),
     );
   }
@@ -1002,6 +1135,7 @@ class GuestTest {
     required this.type,
     required this.description,
     required this.estimatedTimeMinutes,
+    required this.accessLevel,
     required this.imageUrl,
   });
 
@@ -1010,6 +1144,7 @@ class GuestTest {
   final String type;
   final String description;
   final int? estimatedTimeMinutes;
+  final String accessLevel;
   final String? imageUrl;
 
   factory GuestTest.fromJson(Map<String, dynamic> json) {
@@ -1019,6 +1154,7 @@ class GuestTest {
       type: _asString(json['test_type']),
       description: _asString(json['description']),
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
+      accessLevel: _asString(json['access_level'], fallback: 'guest'),
       imageUrl: _asNullableString(json['image_url']),
     );
   }
@@ -1034,10 +1170,10 @@ String _shortMinutes(int? minutes) {
 
 String _testDuration(int? minutes) {
   if (minutes == null || minutes <= 0) {
-    return 'несколько минут на прохождение';
+    return 'несколько минут';
   }
 
-  return '$minutes ${_minuteWord(minutes)} на прохождение';
+  return '$minutes ${_minuteWord(minutes)}';
 }
 
 String _minuteWord(int minutes) {

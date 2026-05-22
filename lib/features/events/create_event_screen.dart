@@ -102,10 +102,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     });
 
     try {
-      final patientId = await _loadCurrentPatientId();
+      final currentPatientExternalId = await SessionService()
+          .getCurrentPatientExternalId();
+      final patientId = await _loadCurrentPatientId(
+        currentPatientExternalId: currentPatientExternalId,
+      );
       final startsAt = _combinedStartsAt();
       final now = DateTime.now().toIso8601String();
-      final eventPayload = {
+      final basePayload = {
         'creator_patient_id': patientId,
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -114,19 +118,29 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'location': _locationController.text.trim(),
         'starts_at': startsAt.toIso8601String(),
         'participant_limit': _participantLimitValue(),
-        'event_status': 'pending',
         'created_at': now,
         'updated_at': now,
       };
 
-      final insertedEvents = await _supabase
-          .from('events')
-          .insert(eventPayload)
-          .select('event_id, event_status, creator_patient_id')
-          .timeout(const Duration(seconds: 10));
-      final insertedEvent = insertedEvents.isEmpty
-          ? <String, dynamic>{}
-          : Map<String, dynamic>.from(insertedEvents.first);
+      debugPrint(
+        'Create event currentPatientExternalId=$currentPatientExternalId',
+      );
+      debugPrint('Create event resolved patient_id=$patientId');
+      debugPrint('Create event title=${basePayload['title']}');
+      debugPrint('Create event description=${basePayload['description']}');
+      debugPrint('Create event event_format=${basePayload['event_format']}');
+      debugPrint('Create event category=${basePayload['category']}');
+      debugPrint('Create event location=${basePayload['location']}');
+      debugPrint('Create event starts_at=${basePayload['starts_at']}');
+      debugPrint(
+        'Create event participant_limit=${basePayload['participant_limit']}',
+      );
+
+      final insertedEvent = await _insertEventWithStatus(
+        basePayload: basePayload,
+        status: 'pending',
+      );
+      debugPrint('Create event event_status=pending');
       debugPrint(
         'Created event id=${insertedEvent['event_id']} '
         'status=${insertedEvent['event_status']} '
@@ -139,11 +153,37 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Событие отправлено на проверку')),
       );
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (context) => const EventsScreen()),
+      Navigator.of(context).pop(true);
+    } on StateError catch (error, stackTrace) {
+      debugPrint('Create event state error: ${error.runtimeType}');
+      debugPrint('Create event state error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSaving = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось определить пользователя')),
       );
     } catch (error, stackTrace) {
-      debugPrint('Create event insert error: $error');
+      debugPrint('Create event insert error runtimeType=${error.runtimeType}');
+      debugPrint('Create event insert error: ${error.toString()}');
+      if (error is PostgrestException) {
+        debugPrint(
+          'Create event insert PostgrestException message: ${error.message}',
+        );
+        debugPrint(
+          'Create event insert PostgrestException code: ${error.code}',
+        );
+        debugPrint(
+          'Create event insert PostgrestException details: ${error.details}',
+        );
+        debugPrint(
+          'Create event insert PostgrestException hint: ${error.hint}',
+        );
+      }
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) {
         return;
@@ -157,19 +197,58 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }
   }
 
-  Future<Object> _loadCurrentPatientId() async {
-    final externalId = await SessionService().getCurrentPatientExternalId();
+  Future<Object> _loadCurrentPatientId({
+    required String currentPatientExternalId,
+  }) async {
     final data = await _supabase
         .from('patients')
         .select('patient_id')
-        .eq('external_patient_id', externalId)
+        .eq('external_patient_id', currentPatientExternalId)
         .limit(1)
         .timeout(const Duration(seconds: 10));
 
     if (data.isEmpty || data.first['patient_id'] == null) {
-      throw StateError('Patient not found for external id: $externalId');
+      throw StateError(
+        'Patient not found for external id: $currentPatientExternalId',
+      );
     }
     return data.first['patient_id'];
+  }
+
+  Future<Map<String, dynamic>> _insertEventWithStatus({
+    required Map<String, Object?> basePayload,
+    required String status,
+  }) async {
+    final payload = <String, Object?>{...basePayload, 'event_status': status};
+    debugPrint('Create event insert payload: $payload');
+
+    try {
+      return Map<String, dynamic>.from(
+        await _supabase
+            .from('events')
+            .insert(payload)
+            .select('event_id, event_status, creator_patient_id')
+            .single()
+            .timeout(const Duration(seconds: 10)),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Create event insert attempt failed for status=$status '
+        'runtimeType=${error.runtimeType}',
+      );
+      debugPrint('Create event insert attempt failed: ${error.toString()}');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (status == 'pending') {
+        debugPrint('Create event retrying insert with status=moderation');
+        return _insertEventWithStatus(
+          basePayload: basePayload,
+          status: 'moderation',
+        );
+      }
+
+      rethrow;
+    }
   }
 
   DateTime _combinedStartsAt() {

@@ -268,11 +268,15 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
   Widget _buildRequestSection(BuildContext context) {
     final request = _request;
     if (request?.isAccepted ?? false) {
-      return const _InfoText(text: 'Вы уже участвуете в этом событии');
+      return const SizedBox(
+        width: double.infinity,
+        child: _InfoText(text: 'Вы уже участвуете в этом событии'),
+      );
     }
     if (request?.isPending ?? false) {
-      return const _InfoText(
-        text: 'Запрос уже отправлен и ожидает подтверждения',
+      return const SizedBox(
+        width: double.infinity,
+        child: _InfoText(text: 'Запрос уже отправлен и ожидает подтверждения'),
       );
     }
 

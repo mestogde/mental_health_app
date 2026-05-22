@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
@@ -22,11 +27,123 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _fullName = 'Елизавета';
   int _readArticlesCount = 5;
   int _completedMeetingsCount = 3;
+  Uint8List? _avatarBytes;
+  bool _isPickingAvatar = false;
 
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _loadAvatar();
+  }
+
+  Future<void> _loadAvatar() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedValue = prefs.getString(_avatarPrefsKey);
+      debugPrint(
+        'Loaded profile avatar base64 length: ${savedValue?.length ?? 0}',
+      );
+      if (savedValue == null || savedValue.isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _avatarBytes = null;
+        });
+        return;
+      }
+
+      try {
+        final decodedBytes = base64Decode(savedValue);
+        debugPrint('Decoded avatar bytes length: ${decodedBytes.length}');
+        if (decodedBytes.isEmpty) {
+          throw StateError('Decoded avatar bytes are empty');
+        }
+
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _avatarBytes = decodedBytes;
+        });
+      } catch (error, stackTrace) {
+        debugPrint('Profile avatar decode error: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        await prefs.remove(_avatarPrefsKey);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _avatarBytes = null;
+        });
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Profile avatar load error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _pickAvatarImage() async {
+    if (_isPickingAvatar) {
+      return;
+    }
+
+    debugPrint('Profile avatar tap happened');
+
+    if (mounted) {
+      setState(() {
+        _isPickingAvatar = true;
+      });
+    }
+
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 75,
+        maxWidth: 512,
+        maxHeight: 512,
+      );
+      if (pickedFile == null) {
+        debugPrint('Profile avatar picker returned null');
+        return;
+      }
+
+      debugPrint('Profile avatar picker returned file: ${pickedFile.path}');
+      final bytes = await pickedFile.readAsBytes();
+      debugPrint('Picked avatar bytes length: ${bytes.length}');
+      if (bytes.isEmpty) {
+        throw StateError('Picked avatar bytes are empty');
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = base64Encode(bytes);
+      await prefs.setString(_avatarPrefsKey, encoded);
+      debugPrint('Avatar picked and saved. Bytes: ${bytes.length}');
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _avatarBytes = bytes;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Profile avatar pick error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Не удалось выбрать фото')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingAvatar = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadStats() async {
@@ -137,10 +254,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 const Align(
                   alignment: Alignment.centerRight,
-                  child: Icon(Icons.settings_outlined, size: 28),
+                  child: Icon(
+                    Icons.settings_outlined,
+                    size: 25,
+                    color: Color(0xFF767676),
+                  ),
                 ),
                 const SizedBox(height: 5),
-                const _Avatar(),
+                _Avatar(
+                  avatarBytes: _avatarBytes,
+                  isPickingAvatar: _isPickingAvatar,
+                  onTap: _pickAvatarImage,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   _fullName,
@@ -201,33 +326,126 @@ class _TopGlow extends StatelessWidget {
   }
 }
 
+const _avatarPrefsKey = 'profile_avatar_base64';
+
 class _Avatar extends StatelessWidget {
-  const _Avatar();
+  const _Avatar({
+    required this.avatarBytes,
+    required this.isPickingAvatar,
+    required this.onTap,
+  });
+
+  final Uint8List? avatarBytes;
+  final bool isPickingAvatar;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.blueAccent.withValues(alpha: 0.75),
-              AppColors.pinkAccent.withValues(alpha: 0.85),
-            ],
-          ),
-        ),
-        child: const SizedBox.square(
-          dimension: 128,
-          child: Icon(
-            Icons.person_outline,
-            size: 70,
-            color: AppColors.textDark,
-          ),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.blueAccent.withValues(alpha: 0.75),
+                    AppColors.pinkAccent.withValues(alpha: 0.85),
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(3),
+                child: _AvatarContent(avatarBytes: avatarBytes, size: 128),
+              ),
+            ),
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.95),
+                  ),
+                ),
+                child: SizedBox.square(
+                  dimension: 34,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const Icon(
+                        Icons.photo_camera_outlined,
+                        size: 18,
+                        color: Color(0xFF191919),
+                      ),
+                      if (isPickingAvatar)
+                        const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF191919),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _AvatarContent extends StatelessWidget {
+  const _AvatarContent({required this.avatarBytes, required this.size});
+
+  final Uint8List? avatarBytes;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = avatarBytes;
+    if (bytes == null || bytes.isEmpty) {
+      return _AvatarPlaceholder(size: size);
+    }
+
+    return ClipOval(
+      child: Image.memory(
+        bytes,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      ),
+    );
+  }
+}
+
+class _AvatarPlaceholder extends StatelessWidget {
+  const _AvatarPlaceholder({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFEED9D9),
+      ),
+      child: const Icon(Icons.person_outline, color: Color(0xFF191919)),
     );
   }
 }
@@ -274,10 +492,13 @@ class _StatisticsCard extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: _StatColumn(
-                    icon: Icons.article_outlined,
-                    label: 'прочитанные статьи',
-                    value: readArticlesCount,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: _StatColumn(
+                      icon: Icons.article_outlined,
+                      label: 'прочитанные статьи',
+                      value: readArticlesCount,
+                    ),
                   ),
                 ),
                 const VerticalDivider(
@@ -286,10 +507,13 @@ class _StatisticsCard extends StatelessWidget {
                   color: Color(0xFFBDBDBD),
                 ),
                 Expanded(
-                  child: _StatColumn(
-                    icon: Icons.people_alt_outlined,
-                    label: 'завершённые встречи',
-                    value: completedMeetingsCount,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: _StatColumn(
+                      icon: Icons.people_alt_outlined,
+                      label: 'завершённые встречи',
+                      value: completedMeetingsCount,
+                    ),
                   ),
                 ),
               ],
@@ -314,26 +538,40 @@ class _StatColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, size: 24, color: AppColors.textDark),
-        const SizedBox(height: 7),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 13),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value.toString(),
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24, color: AppColors.textDark),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 12.5, height: 1.15),
+              ),
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            value.toString(),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

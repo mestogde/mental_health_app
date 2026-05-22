@@ -137,33 +137,38 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
       body: SafeArea(
         bottom: false,
-        child: RefreshIndicator(
-          onRefresh: _loadEvents,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 132),
-            children: [
-              _SearchField(controller: _searchController),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SegmentedTabs(
-                      selectedTab: _selectedTab,
-                      onChanged: (tab) => setState(() => _selectedTab = tab),
+        child: ScrollConfiguration(
+          behavior: const _NoGlowScrollBehavior(),
+          child: RefreshIndicator(
+            color: AppColors.pinkAccent,
+            backgroundColor: AppColors.surface,
+            onRefresh: _loadEvents,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 132),
+              children: [
+                _SearchField(controller: _searchController),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SegmentedTabs(
+                        selectedTab: _selectedTab,
+                        onChanged: (tab) => setState(() => _selectedTab = tab),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  _FormatFilter(
-                    value: _formatFilter,
-                    onChanged: (value) => setState(() {
-                      _formatFilter = value ?? 'Все';
-                    }),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildContent(),
-            ],
+                    const SizedBox(width: 12),
+                    _FormatFilter(
+                      value: _formatFilter,
+                      onChanged: (value) => setState(() {
+                        _formatFilter = value ?? 'Все';
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _buildContent(),
+              ],
+            ),
           ),
         ),
       ),
@@ -174,7 +179,9 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_isLoading) {
       return const SizedBox(
         height: 360,
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.pinkAccent),
+        ),
       );
     }
 
@@ -248,6 +255,14 @@ class _EventsScreenState extends State<EventsScreen> {
         return aMatches.compareTo(bMatches);
       }
 
+      if (_selectedTab == _EventsTab.mine) {
+        final aPriority = _ownPriority(a);
+        final bPriority = _ownPriority(b);
+        if (aPriority != bPriority) {
+          return aPriority.compareTo(bPriority);
+        }
+      }
+
       if (_selectedTab == _EventsTab.foreign) {
         final aPriority = _foreignPriority(a);
         final bPriority = _foreignPriority(b);
@@ -297,6 +312,25 @@ class _EventsScreenState extends State<EventsScreen> {
     return 2;
   }
 
+  int _ownPriority(EventItem event) {
+    final lower = event.status.toLowerCase();
+    if (event.isApproved) {
+      return 0;
+    }
+    if (lower.contains('pending') ||
+        lower.contains('moderation') ||
+        lower.contains('ожида') ||
+        lower.contains('провер')) {
+      return 1;
+    }
+    if (lower.contains('rejected') ||
+        lower.contains('declined') ||
+        lower.contains('отклон')) {
+      return 2;
+    }
+    return 3;
+  }
+
   EventRequestItem? _requestFor(String eventId) {
     final currentPatientId = _currentPatientId?.toString();
     for (final request in _requests) {
@@ -310,6 +344,19 @@ class _EventsScreenState extends State<EventsScreen> {
 
   int _requestsCountFor(String eventId) {
     return _requests.where((request) => request.eventId == eventId).length;
+  }
+}
+
+class _NoGlowScrollBehavior extends MaterialScrollBehavior {
+  const _NoGlowScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
   }
 }
 

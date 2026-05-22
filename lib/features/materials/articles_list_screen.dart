@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../core/utils/access_level.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -236,12 +237,20 @@ class _ArticleGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shouldShowLock =
+        requiresExtendedAccess(article.accessLevel) && !isExtendedAccess;
+    debugPrint(
+      'Articles list card build: title=${article.title}, '
+      'access_level=${article.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
+      'shouldShowLock=$shouldShowLock',
+    );
+
     return _GridImageCard(
       title: article.title,
       timeText: _minutesText(article.readingTimeMinutes),
       imageAsset: imageAsset,
-      isLocked: article.isLocked(isExtendedAccess),
-      onTap: article.isLocked(isExtendedAccess)
+      isLocked: shouldShowLock,
+      onTap: shouldShowLock
           ? () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -398,12 +407,13 @@ class _LockChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF777777).withValues(alpha: 0.82),
+        color: Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: Icon(Icons.lock_outline, color: Colors.white, size: 13),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
       ),
     );
   }
@@ -470,7 +480,7 @@ class ArticleListItem {
   final String accessLevel;
 
   bool isLocked(bool isExtendedAccess) {
-    return !isExtendedAccess && accessLevel != 'guest';
+    return requiresExtendedAccess(accessLevel) && !isExtendedAccess;
   }
 
   factory ArticleListItem.fromJson(Map<String, dynamic> json) {
@@ -480,7 +490,7 @@ class ArticleListItem {
       category: _asString(json['category']),
       shortDescription: _asString(json['short_description']),
       readingTimeMinutes: _asInt(json['reading_time_minutes']),
-      accessLevel: _asString(json['access_level'], fallback: 'patient'),
+      accessLevel: _asString(json['access_level'], fallback: 'guest'),
     );
   }
 }

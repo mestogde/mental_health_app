@@ -174,13 +174,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
             right: 22,
             bottom: MediaQuery.paddingOf(context).bottom + 103,
             child: FilledButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Удаление события будет реализовано позже'),
-                  ),
-                );
-              },
+              onPressed: _isLoading ? null : () => _confirmDeleteEvent(context),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFD9D9D9),
                 foregroundColor: AppColors.textDark,
@@ -198,6 +192,225 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeleteEvent(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+            ),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      Text(
+                        'Удалить событие?',
+                        style: Theme.of(dialogContext).textTheme.titleMedium
+                            ?.copyWith(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textDark,
+                            ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Событие будет навсегда удалено',
+                        style: Theme.of(dialogContext).textTheme.bodyMedium
+                            ?.copyWith(
+                              color: const Color(0xFF777777),
+                              height: 1.35,
+                            ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(false),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFD9D9D9),
+                                foregroundColor: AppColors.textDark,
+                                minimumSize: const Size.fromHeight(46),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                                textStyle: Theme.of(dialogContext)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(fontWeight: FontWeight.w500),
+                              ),
+                              child: const Text('Отмена'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFD9D9D9),
+                                foregroundColor: AppColors.textDark,
+                                minimumSize: const Size.fromHeight(46),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                                textStyle: Theme.of(dialogContext)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(fontWeight: FontWeight.w500),
+                              ),
+                              child: const Text('Удалить'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    icon: const Icon(Icons.close, size: 20),
+                    color: const Color(0xFF777777),
+                    splashRadius: 18,
+                    tooltip: 'Отмена',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await _deleteEvent(messenger: messenger, navigator: navigator);
+  }
+
+  Future<void> _deleteEvent({
+    required ScaffoldMessengerState messenger,
+    required NavigatorState navigator,
+  }) async {
+    if (_event == null) {
+      return;
+    }
+
+    try {
+      await _supabase
+          .from('events')
+          .delete()
+          .eq('event_id', widget.eventId)
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) {
+        return;
+      }
+
+      messenger.showSnackBar(const SnackBar(content: Text('Событие удалено')));
+      navigator.pop(true);
+    } catch (error, stackTrace) {
+      debugPrint('Owner event delete error runtimeType=${error.runtimeType}');
+      debugPrint('Owner event delete error: ${error.toString()}');
+      if (error is PostgrestException) {
+        debugPrint(
+          'Owner event delete PostgrestException message: ${error.message}',
+        );
+        debugPrint('Owner event delete PostgrestException code: ${error.code}');
+        debugPrint(
+          'Owner event delete PostgrestException details: ${error.details}',
+        );
+        debugPrint('Owner event delete PostgrestException hint: ${error.hint}');
+        if (_looksLikeForeignKeyConstraint(error)) {
+          try {
+            await _supabase
+                .from('event_requests')
+                .delete()
+                .eq('event_id', widget.eventId)
+                .timeout(const Duration(seconds: 10));
+
+            await _supabase
+                .from('events')
+                .delete()
+                .eq('event_id', widget.eventId)
+                .timeout(const Duration(seconds: 10));
+
+            if (!mounted) {
+              return;
+            }
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Событие удалено')),
+            );
+            navigator.pop(true);
+            return;
+          } catch (retryError, retryStackTrace) {
+            debugPrint(
+              'Owner event delete retry error runtimeType=${retryError.runtimeType}',
+            );
+            debugPrint(
+              'Owner event delete retry error: ${retryError.toString()}',
+            );
+            if (retryError is PostgrestException) {
+              debugPrint(
+                'Owner event delete retry PostgrestException message: ${retryError.message}',
+              );
+              debugPrint(
+                'Owner event delete retry PostgrestException code: ${retryError.code}',
+              );
+              debugPrint(
+                'Owner event delete retry PostgrestException details: ${retryError.details}',
+              );
+              debugPrint(
+                'Owner event delete retry PostgrestException hint: ${retryError.hint}',
+              );
+            }
+            debugPrintStack(stackTrace: retryStackTrace);
+          }
+        }
+      }
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Не удалось удалить событие')),
+      );
+    }
+  }
+
+  bool _looksLikeForeignKeyConstraint(PostgrestException error) {
+    final combined = [
+      error.message,
+      error.details,
+      error.hint,
+      error.code,
+    ].whereType<String>().join(' ').toLowerCase();
+    return combined.contains('foreign key') ||
+        error.code == '23503' ||
+        combined.contains('constraint');
   }
 
   Widget _buildContent(BuildContext context) {
@@ -342,6 +555,21 @@ class _RequestsSummaryRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         child: Row(
           children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.pinkAccent.withValues(alpha: 0.68),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const SizedBox.square(
+                dimension: 36,
+                child: Icon(
+                  Icons.mark_email_unread_outlined,
+                  size: 21,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 '$count ${newRequestWord(count)}',

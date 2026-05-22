@@ -276,12 +276,15 @@ class _ActivityCalendarScreenState extends State<ActivityCalendarScreen> {
                 ),
                 const SizedBox(height: 6),
                 _CreateEventCard(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
+                  onTap: () async {
+                    final created = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
                         builder: (context) => const CreateEventScreen(),
                       ),
                     );
+                    if (created == true && mounted) {
+                      await _loadActivityDates();
+                    }
                   },
                 ),
               ],
@@ -600,7 +603,7 @@ class _CalendarDayCell extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: textColor,
                 fontWeight: isToday || isActive || isSelected
-                    ? FontWeight.w600
+                    ? FontWeight.w500
                     : FontWeight.w400,
               ),
             ),

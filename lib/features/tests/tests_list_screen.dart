@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/assets/app_image_assets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../core/utils/access_level.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -232,12 +233,20 @@ class _TestGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shouldShowLock =
+        requiresExtendedAccess(test.accessLevel) && !isExtendedAccess;
+    debugPrint(
+      'Tests list card build: title=${test.name}, '
+      'access_level=${test.accessLevel}, hasExtendedAccess=$isExtendedAccess, '
+      'shouldShowLock=$shouldShowLock',
+    );
+
     return _GridImageCard(
       title: test.name,
       timeText: _minutesText(test.estimatedTimeMinutes),
       imageAsset: imageAsset,
-      isLocked: test.isLocked(isExtendedAccess),
-      onTap: test.isLocked(isExtendedAccess)
+      isLocked: shouldShowLock,
+      onTap: shouldShowLock
           ? () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -394,12 +403,13 @@ class _LockChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF777777).withValues(alpha: 0.82),
+        color: Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: Icon(Icons.lock_outline, color: Colors.white, size: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        child: Icon(Icons.lock_outline, color: Color(0xFF777777), size: 12),
       ),
     );
   }
@@ -466,7 +476,7 @@ class TestListItem {
   final int? estimatedTimeMinutes;
 
   bool isLocked(bool isExtendedAccess) {
-    return !isExtendedAccess && accessLevel != 'guest';
+    return requiresExtendedAccess(accessLevel) && !isExtendedAccess;
   }
 
   factory TestListItem.fromJson(Map<String, dynamic> json) {
@@ -475,7 +485,7 @@ class TestListItem {
       name: _asString(json['test_name'], fallback: 'Тест'),
       type: _asString(json['test_type']),
       description: _asString(json['description']),
-      accessLevel: _asString(json['access_level'], fallback: 'patient'),
+      accessLevel: _asString(json['access_level'], fallback: 'guest'),
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
     );
   }
@@ -483,7 +493,7 @@ class TestListItem {
 
 String _minutesText(int? minutes) {
   if (minutes == null || minutes <= 0) {
-    return '';
+    return 'несколько минут';
   }
 
   return '$minutes мин';
