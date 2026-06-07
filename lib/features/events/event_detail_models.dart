@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../data/services/reference_data_service.dart';
 
 class EventDetailItem {
   const EventDetailItem({
@@ -62,12 +63,26 @@ class EventDetailItem {
         fallback: 'Событие',
       ),
       description: asString(json['description']),
-      format: asString(json['event_format'] ?? json['format']),
-      category: asString(json['category'], fallback: 'Развлечение'),
+      format: referenceLabel(
+        json,
+        relationKey: 'event_formats',
+        labelKey: 'format_name',
+        fallback: 'Не указан',
+      ),
+      category: referenceLabel(
+        json,
+        relationKey: 'event_categories',
+        labelKey: 'category_name',
+        fallback: 'Развлечение',
+      ),
       location: asString(json['location'], fallback: 'Место не указано'),
       startsAt: asDateTime(json['starts_at']),
       participantLimit: asInt(json['participant_limit']),
-      status: asString(json['event_status'] ?? json['status']),
+      status: referenceSystemValue(
+        json,
+        relationKey: 'event_statuses',
+        fallback: asString(json['status']),
+      ),
     );
   }
 }
@@ -116,9 +131,13 @@ class EventRequestDetail {
     return EventRequestDetail(
       eventId: asString(json['event_id']),
       patientId: json['patient_id'],
-      status: asString(json['request_status'] ?? json['status']),
+      status: referenceSystemValue(
+        json,
+        relationKey: 'request_statuses',
+        fallback: asString(json['status']),
+      ),
       text: asString(json['request_text']),
-      createdAt: asDateTime(json['created_at']),
+      createdAt: asDateTime(json['request_created_at'] ?? json['created_at']),
     );
   }
 }

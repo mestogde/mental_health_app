@@ -11,6 +11,7 @@ import '../../core/widgets/content_status_badge.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/content_progress_service.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -147,25 +148,25 @@ class _ArticlesListScreenState extends State<ArticlesListScreen>
     try {
       final data = await _supabase
           .from('materials')
-          .select(
-            'material_id, title, category, short_description, reading_time_minutes, access_level, publication_status, published_at',
-          )
-          .eq('publication_status', 'active')
+          .select(materialsSelectFields)
           .order('published_at', ascending: false);
 
       debugPrint('Articles query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Articles row: title=${map['title']} access_level=${map['access_level']}',
+          'Articles row: title=${map['title']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
       if (data.isNotEmpty &&
           data.every((row) {
-            final access = Map<String, dynamic>.from(
-              row,
-            )['access_level']?.toString().toLowerCase().trim();
-            return access == 'guest';
+            final access = referenceSystemValue(
+              Map<String, dynamic>.from(row),
+              relationKey: 'access_levels',
+              fallback: 'guest',
+            );
+            return isGuestAccessLevel(access);
           })) {
         debugPrint(
           'TODO: Articles query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
@@ -181,16 +182,14 @@ class _ArticlesListScreenState extends State<ArticlesListScreen>
 
       final data = await _supabase
           .from('materials')
-          .select(
-            'material_id, title, category, short_description, reading_time_minutes, access_level, publication_status, published_at',
-          )
-          .eq('publication_status', 'active');
+          .select(materialsSelectFields);
 
       debugPrint('Articles fallback query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Articles fallback row: title=${map['title']} access_level=${map['access_level']}',
+          'Articles fallback row: title=${map['title']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
 
@@ -583,7 +582,7 @@ class ArticleListItem {
   final String accessLevel;
 
   bool isLocked(bool isExtendedAccess) {
-    return accessLevel.toLowerCase().trim() != 'guest' && !isExtendedAccess;
+    return !isGuestAccessLevel(accessLevel) && !isExtendedAccess;
   }
 
   factory ArticleListItem.fromJson(Map<String, dynamic> json) {
@@ -593,7 +592,13 @@ class ArticleListItem {
       category: _asString(json['category']),
       shortDescription: _asString(json['short_description']),
       readingTimeMinutes: _asInt(json['reading_time_minutes']),
-      accessLevel: _asString(json['access_level'], fallback: 'guest'),
+      accessLevel: normalizeAccessLevel(
+        referenceSystemValue(
+          json,
+          relationKey: 'access_levels',
+          fallback: 'guest',
+        ),
+      ),
     );
   }
 }

@@ -11,6 +11,7 @@ import '../../core/widgets/content_status_badge.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/content_progress_service.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -144,25 +145,25 @@ class _TestsListScreenState extends State<TestsListScreen> with RouteAware {
     try {
       final data = await _supabase
           .from('tests')
-          .select(
-            'test_id, test_name, test_type, description, access_level, activity_status, estimated_time_minutes',
-          )
-          .eq('activity_status', 'active')
+          .select(testsSelectFields)
           .order('test_name');
 
       debugPrint('Tests query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Tests row: name=${map['test_name']} access_level=${map['access_level']}',
+          'Tests row: name=${map['test_name']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
       if (data.isNotEmpty &&
           data.every((row) {
-            final access = Map<String, dynamic>.from(
-              row,
-            )['access_level']?.toString().toLowerCase().trim();
-            return access == 'guest';
+            final access = referenceSystemValue(
+              Map<String, dynamic>.from(row),
+              relationKey: 'access_levels',
+              fallback: 'guest',
+            );
+            return isGuestAccessLevel(access);
           })) {
         debugPrint(
           'TODO: Tests query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
@@ -174,18 +175,14 @@ class _TestsListScreenState extends State<TestsListScreen> with RouteAware {
       debugPrint('Tests ordered query error, retrying without order: $error');
       debugPrintStack(stackTrace: stackTrace);
 
-      final data = await _supabase
-          .from('tests')
-          .select(
-            'test_id, test_name, test_type, description, access_level, activity_status, estimated_time_minutes',
-          )
-          .eq('activity_status', 'active');
+      final data = await _supabase.from('tests').select(testsSelectFields);
 
       debugPrint('Tests fallback query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Tests fallback row: name=${map['test_name']} access_level=${map['access_level']}',
+          'Tests fallback row: name=${map['test_name']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
 
@@ -578,16 +575,27 @@ class TestListItem {
   final String externalTestId;
 
   bool isLocked(bool isExtendedAccess) {
-    return accessLevel.toLowerCase().trim() != 'guest' && !isExtendedAccess;
+    return !isGuestAccessLevel(accessLevel) && !isExtendedAccess;
   }
 
   factory TestListItem.fromJson(Map<String, dynamic> json) {
     return TestListItem(
       id: _asString(json['test_id']),
       name: _asString(json['test_name'], fallback: 'Тест'),
-      type: _asString(json['test_type']),
+      type: referenceLabel(
+        json,
+        relationKey: 'test_types',
+        labelKey: 'type_name',
+        fallback: 'Тест',
+      ),
       description: _asString(json['description']),
-      accessLevel: _asString(json['access_level'], fallback: 'guest'),
+      accessLevel: normalizeAccessLevel(
+        referenceSystemValue(
+          json,
+          relationKey: 'access_levels',
+          fallback: 'guest',
+        ),
+      ),
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
       externalTestId: _asString(json['external_test_id']),
     );

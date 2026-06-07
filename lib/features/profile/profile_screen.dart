@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
@@ -213,11 +214,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<int> _loadCompletedMaterialsCount(Object patientId) async {
+    final completedStatusId = await ReferenceDataService.instance.getId(
+      table: ReferenceTables.materialReadStatuses,
+      idColumn: 'read_status_id',
+      systemValue: 'completed',
+    );
     final data = await _supabase
         .from('material_views')
         .select('patient_id')
         .eq('patient_id', patientId)
-        .eq('reading_status', 'completed');
+        .eq('read_status_id', completedStatusId);
 
     final count = data.length;
     debugPrint('Completed materials count for patient_id=$patientId: $count');
@@ -225,11 +231,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<int> _loadAcceptedEventsCount(Object patientId) async {
+    final acceptedStatusId = await ReferenceDataService.instance.getId(
+      table: ReferenceTables.requestStatuses,
+      idColumn: 'request_status_id',
+      systemValue: 'accepted',
+    );
     final data = await _supabase
         .from('event_requests')
         .select('patient_id')
         .eq('patient_id', patientId)
-        .eq('request_status', 'accepted');
+        .eq('request_status_id', acceptedStatusId);
 
     final count = data.length;
     debugPrint('Accepted events count for patient_id=$patientId: $count');

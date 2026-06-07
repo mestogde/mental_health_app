@@ -12,6 +12,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
 import '../../data/services/content_progress_service.dart';
 import '../../data/services/home_reminder_service.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../auth/qr_access_screen.dart';
 import '../calendar/activity_calendar_screen.dart';
@@ -228,25 +229,25 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> with RouteAware {
     try {
       final data = await _supabase
           .from('materials')
-          .select(
-            'material_id, title, category, short_description, reading_time_minutes, image_url, access_level, publication_status',
-          )
-          .eq('publication_status', 'active')
+          .select(materialsSelectFields)
           .order('published_at', ascending: false);
 
       debugPrint('Home materials query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Home materials row: title=${map['title']} access_level=${map['access_level']}',
+          'Home materials row: title=${map['title']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
       if (data.isNotEmpty &&
           data.every((row) {
-            final access = Map<String, dynamic>.from(
-              row,
-            )['access_level']?.toString().toLowerCase().trim();
-            return access == 'guest';
+            final access = referenceSystemValue(
+              Map<String, dynamic>.from(row),
+              relationKey: 'access_levels',
+              fallback: 'guest',
+            );
+            return isGuestAccessLevel(access);
           })) {
         debugPrint(
           'TODO: Home materials query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
@@ -262,16 +263,14 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> with RouteAware {
 
       final data = await _supabase
           .from('materials')
-          .select(
-            'material_id, title, category, short_description, reading_time_minutes, image_url, access_level, publication_status',
-          )
-          .eq('publication_status', 'active');
+          .select(materialsSelectFields);
 
       debugPrint('Home materials fallback query total rows: ${data.length}');
       for (final row in data) {
         final map = Map<String, dynamic>.from(row);
         debugPrint(
-          'Home materials fallback row: title=${map['title']} access_level=${map['access_level']}',
+          'Home materials fallback row: title=${map['title']} '
+          'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
         );
       }
 
@@ -282,25 +281,25 @@ class _GuestHomeScreenState extends State<GuestHomeScreen> with RouteAware {
   Future<List<GuestTest>> _loadTests() async {
     final data = await _supabase
         .from('tests')
-        .select(
-          'test_id, test_name, test_type, description, access_level, activity_status, estimated_time_minutes, image_url',
-        )
-        .eq('activity_status', 'active')
+        .select(testsSelectFields)
         .order('test_name');
 
     debugPrint('Home tests query total rows: ${data.length}');
     for (final row in data) {
       final map = Map<String, dynamic>.from(row);
       debugPrint(
-        'Home tests row: name=${map['test_name']} access_level=${map['access_level']}',
+        'Home tests row: name=${map['test_name']} '
+        'access_level=${referenceSystemValue(map, relationKey: 'access_levels', fallback: 'guest')}',
       );
     }
     if (data.isNotEmpty &&
         data.every((row) {
-          final access = Map<String, dynamic>.from(
-            row,
-          )['access_level']?.toString().toLowerCase().trim();
-          return access == 'guest';
+          final access = referenceSystemValue(
+            Map<String, dynamic>.from(row),
+            relationKey: 'access_levels',
+            fallback: 'guest',
+          );
+          return isGuestAccessLevel(access);
         })) {
       debugPrint(
         'TODO: Home tests query returned only guest rows. This likely means a Supabase RLS select policy is filtering patient/extended rows.',
@@ -685,7 +684,7 @@ class _TestsSection extends StatelessWidget {
     }
 
     final guestTests = tests
-        .where((test) => test.accessLevel.toLowerCase().trim() == 'guest')
+        .where((test) => isGuestAccessLevel(test.accessLevel))
         .toList();
 
     final visibleTests = guestTests.take(3).toList();
@@ -1311,7 +1310,13 @@ class GuestMaterial {
       category: _asString(json['category']),
       shortDescription: _asString(json['short_description']),
       readingTimeMinutes: _asInt(json['reading_time_minutes']),
-      accessLevel: _asString(json['access_level'], fallback: 'guest'),
+      accessLevel: normalizeAccessLevel(
+        referenceSystemValue(
+          json,
+          relationKey: 'access_levels',
+          fallback: 'guest',
+        ),
+      ),
       imageUrl: _asNullableString(json['image_url']),
     );
   }
@@ -1342,10 +1347,21 @@ class GuestTest {
     return GuestTest(
       id: _asString(json['test_id']),
       name: _asString(json['test_name'], fallback: 'Тест'),
-      type: _asString(json['test_type']),
+      type: referenceLabel(
+        json,
+        relationKey: 'test_types',
+        labelKey: 'type_name',
+        fallback: 'Тест',
+      ),
       description: _asString(json['description']),
       estimatedTimeMinutes: _asInt(json['estimated_time_minutes']),
-      accessLevel: _asString(json['access_level'], fallback: 'guest'),
+      accessLevel: normalizeAccessLevel(
+        referenceSystemValue(
+          json,
+          relationKey: 'access_levels',
+          fallback: 'guest',
+        ),
+      ),
       imageUrl: _asNullableString(json['image_url']),
       externalTestId: _asString(json['external_test_id']),
     );

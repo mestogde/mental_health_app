@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../events/create_event_screen.dart';
 import '../guest/guest_home_screen.dart';
@@ -155,11 +156,16 @@ class _ActivityCalendarScreenState extends State<ActivityCalendarScreen> {
     Object patientId,
   ) async {
     try {
+      final acceptedStatusId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.requestStatuses,
+        idColumn: 'request_status_id',
+        systemValue: 'accepted',
+      );
       final data = await _supabase
           .from('event_requests')
           .select('events(starts_at)')
           .eq('patient_id', patientId)
-          .eq('request_status', 'accepted')
+          .eq('request_status_id', acceptedStatusId)
           .timeout(const Duration(seconds: 10));
 
       for (final row in data) {

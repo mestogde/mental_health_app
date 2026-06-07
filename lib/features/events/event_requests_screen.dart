@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
 import '../profile/profile_screen.dart';
@@ -43,7 +44,7 @@ class _EventRequestsScreenState extends State<EventRequestsScreen> {
     try {
       final eventData = await _supabase
           .from('events')
-          .select('*')
+          .select(eventsSelectFields)
           .eq('event_id', widget.eventId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -57,7 +58,7 @@ class _EventRequestsScreenState extends State<EventRequestsScreen> {
       );
       final requestRows = await _supabase
           .from('event_requests')
-          .select('*')
+          .select(eventRequestsSelectFields)
           .eq('event_id', widget.eventId)
           .timeout(const Duration(seconds: 10));
 
@@ -103,7 +104,7 @@ class _EventRequestsScreenState extends State<EventRequestsScreen> {
     try {
       final data = await _supabase
           .from('patients')
-          .select('*')
+          .select('patient_id, full_name, birth_date')
           .eq('patient_id', patientId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -157,9 +158,14 @@ class _EventRequestsScreenState extends State<EventRequestsScreen> {
     });
 
     try {
+      final statusId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.requestStatuses,
+        idColumn: 'request_status_id',
+        systemValue: status,
+      );
       await _supabase
           .from('event_requests')
-          .update({'request_status': status})
+          .update({'request_status_id': statusId})
           .eq('event_id', request.eventId)
           .eq('patient_id', patientId)
           .timeout(const Duration(seconds: 10));

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../guest/guest_home_screen.dart';
 import '../events/events_screen.dart';
@@ -110,12 +111,22 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
       final startsAt = _combinedStartsAt();
       final now = DateTime.now().toIso8601String();
+      final formatId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.eventFormats,
+        idColumn: 'event_format_id',
+        systemValue: _eventFormatSystemValue(_format!),
+      );
+      final categoryId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.eventCategories,
+        idColumn: 'event_category_id',
+        systemValue: _eventCategorySystemValue(_category!),
+      );
       final basePayload = {
         'creator_patient_id': patientId,
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'event_format': _format,
-        'category': _category,
+        'event_format_id': formatId,
+        'event_category_id': categoryId,
         'location': _locationController.text.trim(),
         'starts_at': startsAt.toIso8601String(),
         'participant_limit': _participantLimitValue(),
@@ -129,8 +140,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       debugPrint('Create event resolved patient_id=$patientId');
       debugPrint('Create event title=${basePayload['title']}');
       debugPrint('Create event description=${basePayload['description']}');
-      debugPrint('Create event event_format=${basePayload['event_format']}');
-      debugPrint('Create event category=${basePayload['category']}');
+      debugPrint(
+        'Create event event_format_id=${basePayload['event_format_id']}',
+      );
+      debugPrint(
+        'Create event event_category_id=${basePayload['event_category_id']}',
+      );
       debugPrint('Create event location=${basePayload['location']}');
       debugPrint('Create event starts_at=${basePayload['starts_at']}');
       debugPrint(
@@ -144,7 +159,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       debugPrint('Create event event_status=pending');
       debugPrint(
         'Created event id=${insertedEvent['event_id']} '
-        'status=${insertedEvent['event_status']} '
+        'status=${referenceSystemValue(insertedEvent, relationKey: 'event_statuses')} '
         'creator_patient_id=${insertedEvent['creator_patient_id']}',
       );
 
@@ -220,7 +235,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     required Map<String, Object?> basePayload,
     required String status,
   }) async {
-    final payload = <String, Object?>{...basePayload, 'event_status': status};
+    final payload = <String, Object?>{
+      ...basePayload,
+      'event_status_id': await ReferenceDataService.instance.getId(
+        table: ReferenceTables.eventStatuses,
+        idColumn: 'event_status_id',
+        systemValue: status,
+      ),
+    };
     debugPrint('Create event insert payload: $payload');
 
     try {
@@ -228,7 +250,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         await _supabase
             .from('events')
             .insert(payload)
-            .select('event_id, event_status, creator_patient_id')
+            .select(
+              'event_id, creator_patient_id, event_status_id, '
+              'event_statuses(system_value, status_name)',
+            )
             .single()
             .timeout(const Duration(seconds: 10)),
       );
@@ -239,15 +264,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
       debugPrint('Create event insert attempt failed: ${error.toString()}');
       debugPrintStack(stackTrace: stackTrace);
-
-      if (status == 'pending') {
-        debugPrint('Create event retrying insert with status=moderation');
-        return _insertEventWithStatus(
-          basePayload: basePayload,
-          status: 'moderation',
-        );
-      }
-
       rethrow;
     }
   }
@@ -723,6 +739,23 @@ String _formatTime(TimeOfDay time) {
   final hour = time.hour.toString().padLeft(2, '0');
   final minute = time.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
+}
+
+String _eventFormatSystemValue(String label) {
+  return switch (label.trim().toLowerCase()) {
+    'онлайн' => 'online',
+    'офлайн' => 'offline',
+    _ => label.trim().toLowerCase(),
+  };
+}
+
+String _eventCategorySystemValue(String label) {
+  return switch (label.trim().toLowerCase()) {
+    'прогулка' => 'nature',
+    'развлечение' => 'entertainment',
+    'игра' => 'game',
+    _ => label.trim().toLowerCase(),
+  };
 }
 
 IconData _categoryIcon(String category) {

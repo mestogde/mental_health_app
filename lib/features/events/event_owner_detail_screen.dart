@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
@@ -45,7 +46,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
       final currentPatientId = await _loadCurrentPatientId();
       final eventData = await _supabase
           .from('events')
-          .select('*')
+          .select(eventsSelectFields)
           .eq('event_id', widget.eventId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -107,7 +108,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
     try {
       final data = await _supabase
           .from('patients')
-          .select('*')
+          .select('patient_id, full_name, birth_date')
           .eq('patient_id', patientId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -127,7 +128,7 @@ class _EventOwnerDetailScreenState extends State<EventOwnerDetailScreen> {
   Future<List<EventRequestDetail>> _loadRequests() async {
     final data = await _supabase
         .from('event_requests')
-        .select('*')
+        .select(eventRequestsSelectFields)
         .eq('event_id', widget.eventId)
         .timeout(const Duration(seconds: 10));
 

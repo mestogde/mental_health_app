@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'reference_data_service.dart';
 import 'session_service.dart';
 
 class HomeReminderService {
@@ -57,7 +58,7 @@ class HomeReminderService {
       final now = DateTime.now();
       final data = await _supabase
           .from('consultations')
-          .select('*')
+          .select(consultationsSelectFields)
           .eq('patient_id', patientId)
           .gte('scheduled_at', now.toIso8601String())
           .order('scheduled_at')
@@ -145,21 +146,30 @@ class HomeReminderService {
     DateTime now,
   ) async {
     try {
+      final acceptedStatusId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.requestStatuses,
+        idColumn: 'request_status_id',
+        systemValue: 'accepted',
+      );
       final data = await _supabase
           .from('event_requests')
           .select(
-            'request_status, events(event_id, title, starts_at, event_status, creator_patient_id)',
+            'request_status_id, request_statuses(system_value), '
+            'events($eventsSelectFields)',
           )
           .eq('patient_id', patientId)
-          .eq('request_status', 'accepted')
+          .eq('request_status_id', acceptedStatusId)
           .timeout(const Duration(seconds: 10));
 
       final events = <_EventCandidate>[];
       for (final row in data) {
-        if (!_isAcceptedStatus(row['request_status'])) {
+        final requestRow = Map<String, dynamic>.from(row);
+        if (!_isAcceptedStatus(requestRow)) {
           continue;
         }
-        final candidates = _eventCandidatesFromJoinedValue(row['events']);
+        final candidates = _eventCandidatesFromJoinedValue(
+          requestRow['events'],
+        );
         for (final candidate in candidates) {
           if (!candidate.startsAt.isBefore(now)) {
             events.add(candidate);
@@ -179,12 +189,16 @@ class HomeReminderService {
     DateTime now,
   ) async {
     try {
+      final approvedStatusId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.eventStatuses,
+        idColumn: 'event_status_id',
+        systemValue: 'approved',
+      );
       final data = await _supabase
           .from('events')
-          .select(
-            'event_id, title, starts_at, event_status, creator_patient_id',
-          )
+          .select(eventsSelectFields)
           .eq('creator_patient_id', patientId)
+          .eq('event_status_id', approvedStatusId)
           .gte('starts_at', now.toIso8601String())
           .timeout(const Duration(seconds: 10));
 
@@ -195,7 +209,7 @@ class HomeReminderService {
                     isOwnEvent: true,
                   ) !=
                   null &&
-              _isApprovedStatus(row['event_status']))
+              _isApprovedStatus(Map<String, dynamic>.from(row)))
             _eventCandidateFromMap(
               Map<String, dynamic>.from(row),
               isOwnEvent: true,
@@ -360,8 +374,11 @@ String _asString(Object? value, {required String fallback}) {
   return text;
 }
 
-bool _isApprovedStatus(Object? status) {
-  final lower = status?.toString().toLowerCase() ?? '';
+bool _isApprovedStatus(Map<String, dynamic> row) {
+  final lower = referenceSystemValue(
+    row,
+    relationKey: 'event_statuses',
+  ).toLowerCase();
   return lower.contains('approved') ||
       lower.contains('published') ||
       lower.contains('active') ||
@@ -369,8 +386,11 @@ bool _isApprovedStatus(Object? status) {
       lower.contains('провер');
 }
 
-bool _isAcceptedStatus(Object? status) {
-  final lower = status?.toString().toLowerCase() ?? '';
+bool _isAcceptedStatus(Map<String, dynamic> row) {
+  final lower = referenceSystemValue(
+    row,
+    relationKey: 'request_statuses',
+  ).toLowerCase();
   return lower.contains('accepted') ||
       lower.contains('confirmed') ||
       lower.contains('approved') ||

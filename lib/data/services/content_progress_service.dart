@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'reference_data_service.dart';
 import 'session_service.dart';
 
 class ContentProgressService {
@@ -74,7 +75,11 @@ class ContentProgressService {
       final payload = {
         'patient_id': patientId,
         'material_id': materialId,
-        'reading_status': 'completed',
+        'read_status_id': await ReferenceDataService.instance.getId(
+          table: ReferenceTables.materialReadStatuses,
+          idColumn: 'read_status_id',
+          systemValue: 'completed',
+        ),
         'last_viewed_at': DateTime.now().toIso8601String(),
       };
 

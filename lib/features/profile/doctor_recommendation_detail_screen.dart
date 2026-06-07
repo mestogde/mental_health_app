@@ -46,9 +46,7 @@ class _DoctorRecommendationDetailScreenState
     try {
       final data = await _supabase
           .from('recommendations')
-          .select(
-            'recommendation_id, recommendation_text, received_at, recommendation_status',
-          )
+          .select('recommendation_id, recommendation_text, received_at')
           .eq('recommendation_id', widget.recommendationId)
           .limit(1)
           .timeout(const Duration(seconds: 10));

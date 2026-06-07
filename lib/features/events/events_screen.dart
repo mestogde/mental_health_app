@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../calendar/activity_calendar_screen.dart';
 import 'event_foreign_detail_screen.dart';
@@ -55,11 +56,11 @@ class _EventsScreenState extends State<EventsScreen> {
       final patientId = await _loadCurrentPatientId();
       final rows = await _supabase
           .from('events')
-          .select('*')
+          .select(eventsSelectFields)
           .timeout(const Duration(seconds: 10));
       final requestRows = await _supabase
           .from('event_requests')
-          .select('*')
+          .select(eventRequestsSelectFields)
           .timeout(const Duration(seconds: 10));
 
       if (!mounted) {
@@ -800,12 +801,26 @@ class EventItem {
         fallback: 'Событие',
       ),
       description: asString(json['description']),
-      format: asString(json['event_format'] ?? json['format']),
-      category: asString(json['category'], fallback: 'Развлечение'),
+      format: referenceLabel(
+        json,
+        relationKey: 'event_formats',
+        labelKey: 'format_name',
+        fallback: 'Не указан',
+      ),
+      category: referenceLabel(
+        json,
+        relationKey: 'event_categories',
+        labelKey: 'category_name',
+        fallback: 'Развлечение',
+      ),
       location: asString(json['location'], fallback: 'Место не указано'),
       startsAt: asDateTime(json['starts_at']),
       participantLimit: asInt(json['participant_limit']),
-      status: asString(json['event_status'] ?? json['status']),
+      status: referenceSystemValue(
+        json,
+        relationKey: 'event_statuses',
+        fallback: asString(json['status']),
+      ),
       createdAt: asDateTime(json['created_at']),
     );
   }
@@ -844,7 +859,11 @@ class EventRequestItem {
     return EventRequestItem(
       eventId: asString(json['event_id']),
       patientId: json['patient_id'],
-      status: asString(json['request_status'] ?? json['status']),
+      status: referenceSystemValue(
+        json,
+        relationKey: 'request_statuses',
+        fallback: asString(json['status']),
+      ),
     );
   }
 }

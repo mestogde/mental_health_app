@@ -71,9 +71,7 @@ class _DoctorRecommendationsScreenState
     final patientId = await _loadCurrentPatientId();
     final data = await _supabase
         .from('recommendations')
-        .select(
-          'recommendation_id, recommendation_text, received_at, recommendation_status',
-        )
+        .select('recommendation_id, recommendation_text, received_at')
         .eq('patient_id', patientId)
         .order('received_at', ascending: false);
 
@@ -236,13 +234,11 @@ class DoctorRecommendation {
     required this.id,
     required this.text,
     required this.receivedAt,
-    required this.status,
   });
 
   final String id;
   final String text;
   final DateTime receivedAt;
-  final String status;
 
   String get title {
     final firstLine = text.split(RegExp(r'[\n.!?]')).first.trim();
@@ -266,7 +262,6 @@ class DoctorRecommendation {
       id: asString(json['recommendation_id']),
       text: asString(json['recommendation_text'], fallback: 'Рекомендация'),
       receivedAt: asDateTime(json['received_at']),
-      status: asString(json['recommendation_status']),
     );
   }
 }

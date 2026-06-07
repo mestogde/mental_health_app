@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/services/content_progress_service.dart';
+import '../../data/services/reference_data_service.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   const ArticleDetailScreen({
@@ -59,8 +60,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   Future<_ArticleDetailData> _loadArticleDetail() async {
-    final baseSelect =
-        'material_id, title, category, short_description, reading_time_minutes, access_level, image_url';
+    const baseSelect = materialsSelectFields;
     final contentFields = <String>[
       'description',
       'content',

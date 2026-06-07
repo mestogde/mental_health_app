@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/navigation/no_transition_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/guest_bottom_navigation.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 import '../calendar/activity_calendar_screen.dart';
 import '../guest/guest_home_screen.dart';
@@ -54,7 +55,7 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
       final patientId = await _loadCurrentPatientId();
       final eventData = await _supabase
           .from('events')
-          .select('*')
+          .select(eventsSelectFields)
           .eq('event_id', widget.eventId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -114,7 +115,7 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
     try {
       final data = await _supabase
           .from('patients')
-          .select('*')
+          .select('patient_id, full_name, birth_date')
           .eq('patient_id', patientId)
           .limit(1)
           .timeout(const Duration(seconds: 10));
@@ -134,7 +135,7 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
   Future<EventRequestDetail?> _loadCurrentRequest(Object patientId) async {
     final data = await _supabase
         .from('event_requests')
-        .select('*')
+        .select(eventRequestsSelectFields)
         .eq('event_id', widget.eventId)
         .eq('patient_id', patientId)
         .limit(1)
@@ -164,14 +165,21 @@ class _EventForeignDetailScreenState extends State<EventForeignDetailScreen> {
     });
 
     try {
+      final pendingStatusId = await ReferenceDataService.instance.getId(
+        table: ReferenceTables.requestStatuses,
+        idColumn: 'request_status_id',
+        systemValue: 'pending',
+      );
+      final nowIso = DateTime.now().toIso8601String();
       await _supabase
           .from('event_requests')
           .insert({
             'event_id': widget.eventId,
             'patient_id': patientId,
             'request_text': message,
-            'request_status': 'pending',
-            'created_at': DateTime.now().toIso8601String(),
+            'request_status_id': pendingStatusId,
+            'request_created_at': nowIso,
+            'created_at': nowIso,
           })
           .timeout(const Duration(seconds: 10));
 

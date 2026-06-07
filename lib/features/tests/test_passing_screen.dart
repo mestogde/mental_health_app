@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/demo/test_question_catalog.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/services/content_progress_service.dart';
+import '../../data/services/reference_data_service.dart';
 import '../../data/services/session_service.dart';
 
 class TestPassingScreen extends StatefulWidget {
@@ -137,7 +138,11 @@ class _TestPassingScreenState extends State<TestPassingScreen> {
         'total_score': totalScore,
         'interpretation': conclusion,
         'conclusion': conclusion,
-        'attempt_status': 'completed',
+        'attempt_status_id': await ReferenceDataService.instance.getId(
+          table: ReferenceTables.testAttemptStatuses,
+          idColumn: 'attempt_status_id',
+          systemValue: 'completed',
+        ),
         'created_at': nowIso,
         'updated_at': nowIso,
       };
